@@ -69,7 +69,7 @@ export default class Game {
   private weapons: Record<string, WeaponInfo> = {};
   private lastShot = 0;
   private nearbyVehicle: VehicleData | null = null;
-  private worldSize = 200;
+  private worldSize = 400;
   private cameraHeight = 1.7;
   private clock = new THREE.Clock();
   private animFrameId: number | null = null;
@@ -100,7 +100,7 @@ export default class Game {
   private init() {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x87CEEB);
-    this.scene.fog = new THREE.Fog(0x87CEEB, 50, this.worldSize * 0.8);
+    this.scene.fog = new THREE.Fog(0x87CEEB, 50, this.worldSize * 0.7);
 
     this.camera = new THREE.PerspectiveCamera(75, this.container.clientWidth / this.container.clientHeight, 0.1, 500);
     this.camera.position.set(0, this.cameraHeight, 5);
@@ -119,11 +119,11 @@ export default class Game {
     dir.castShadow = true;
     dir.shadow.mapSize.set(2048, 2048);
     dir.shadow.camera.near = 0.5;
-    dir.shadow.camera.far = 300;
-    dir.shadow.camera.left = -100;
-    dir.shadow.camera.right = 100;
-    dir.shadow.camera.top = 100;
-    dir.shadow.camera.bottom = -100;
+    dir.shadow.camera.far = 400;
+    dir.shadow.camera.left = -200;
+    dir.shadow.camera.right = 200;
+    dir.shadow.camera.top = 200;
+    dir.shadow.camera.bottom = -200;
     this.scene.add(dir);
 
     this.createWeaponArms();
@@ -530,7 +530,6 @@ export default class Game {
     const sidewalkMat = new THREE.MeshLambertMaterial({ color: 0x999999 });
     const lineMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
 
-    // Main avenues (N-S and E-W)
     const mainH = new THREE.Mesh(new THREE.BoxGeometry(this.worldSize, 0.06, 10), roadMat);
     mainH.position.set(0, 0.03, 0);
     this.scene.add(mainH);
@@ -538,7 +537,6 @@ export default class Game {
     mainV.position.set(0, 0.03, 0);
     this.scene.add(mainV);
 
-    // Sidewalks on main avenues
     for (const side of [-5.5, 5.5]) {
       const swH = new THREE.Mesh(new THREE.BoxGeometry(this.worldSize, 0.08, 1.5), sidewalkMat);
       swH.position.set(0, 0.04, side);
@@ -548,7 +546,6 @@ export default class Game {
       this.scene.add(swV);
     }
 
-    // Center lane markings
     const lineH = new THREE.Mesh(new THREE.BoxGeometry(this.worldSize, 0.07, 0.15), lineMat);
     lineH.position.set(0, 0.06, 0);
     this.scene.add(lineH);
@@ -556,12 +553,15 @@ export default class Game {
     lineV.position.set(0, 0.06, 0);
     this.scene.add(lineV);
 
-    // Secondary streets (Downtown grid NW)
     const streets = [
-      { x: -55, z: 0, w: 6, d: this.worldSize * 0.5 },
-      { x: 55, z: 0, w: 6, d: this.worldSize * 0.5 },
-      { x: 0, z: -55, w: this.worldSize * 0.5, d: 6 },
-      { x: 0, z: 55, w: this.worldSize * 0.5, d: 6 },
+      { x: -90, z: 0, w: 6, d: this.worldSize * 0.7 },
+      { x: 90, z: 0, w: 6, d: this.worldSize * 0.7 },
+      { x: 0, z: -90, w: this.worldSize * 0.7, d: 6 },
+      { x: 0, z: 90, w: this.worldSize * 0.7, d: 6 },
+      { x: -150, z: 0, w: 6, d: this.worldSize * 0.5 },
+      { x: 150, z: 0, w: 6, d: this.worldSize * 0.5 },
+      { x: 0, z: -150, w: this.worldSize * 0.5, d: 6 },
+      { x: 0, z: 150, w: this.worldSize * 0.5, d: 6 },
     ];
     for (const s of streets) {
       const street = new THREE.Mesh(new THREE.BoxGeometry(s.w, 0.05, s.d), roadMat);
@@ -569,12 +569,11 @@ export default class Game {
       this.scene.add(street);
     }
 
-    // Zone ground patches
     const zonePatches = [
-      { x: -55, z: -55, w: 60, d: 60, color: 0x444444 },
-      { x: 65, z: -60, w: 55, d: 55, color: 0x665533 },
-      { x: -58, z: 70, w: 55, d: 50, color: 0xb8945a },
-      { x: 65, z: 70, w: 55, d: 50, color: 0x3a7d44 },
+      { x: -120, z: -120, w: 160, d: 160, color: 0x444444 },
+      { x: 130, z: -120, w: 150, d: 150, color: 0x665533 },
+      { x: -120, z: 130, w: 160, d: 150, color: 0xb8945a },
+      { x: 130, z: 130, w: 150, d: 150, color: 0x3a7d44 },
     ];
     for (const z of zonePatches) {
       const pMesh = new THREE.Mesh(new THREE.PlaneGeometry(z.w, z.d), new THREE.MeshLambertMaterial({ color: z.color }));
@@ -584,33 +583,30 @@ export default class Game {
       this.scene.add(pMesh);
     }
 
-    // Downtown pavement (concrete)
     const downtownPavement = new THREE.Mesh(
-      new THREE.PlaneGeometry(65, 65),
+      new THREE.PlaneGeometry(160, 160),
       new THREE.MeshLambertMaterial({ color: 0x666666 })
     );
     downtownPavement.rotation.x = -Math.PI / 2;
-    downtownPavement.position.set(-55, 0.02, -55);
+    downtownPavement.position.set(-120, 0.02, -120);
     downtownPavement.receiveShadow = true;
     this.scene.add(downtownPavement);
 
-    // Industrial dirt ground
     const industrialGround = new THREE.Mesh(
-      new THREE.PlaneGeometry(55, 55),
+      new THREE.PlaneGeometry(150, 150),
       new THREE.MeshLambertMaterial({ color: 0x7a6b44 })
     );
     industrialGround.rotation.x = -Math.PI / 2;
-    industrialGround.position.set(65, 0.02, -60);
+    industrialGround.position.set(130, 0.02, -120);
     industrialGround.receiveShadow = true;
     this.scene.add(industrialGround);
 
-    // Favela dirt
     const favelaGround = new THREE.Mesh(
-      new THREE.PlaneGeometry(55, 55),
+      new THREE.PlaneGeometry(160, 150),
       new THREE.MeshLambertMaterial({ color: 0xa08050 })
     );
     favelaGround.rotation.x = -Math.PI / 2;
-    favelaGround.position.set(-58, 0.02, 70);
+    favelaGround.position.set(-120, 0.02, 130);
     favelaGround.receiveShadow = true;
     this.scene.add(favelaGround);
 
@@ -630,12 +626,13 @@ export default class Game {
     const poleMat = new THREE.MeshLambertMaterial({ color: 0x444444 });
     const lightMat = new THREE.MeshBasicMaterial({ color: 0xffffcc });
 
-    // Street lights along main roads
     const lightPositions = [
-      { x: 15, z: 0 }, { x: -15, z: 0 }, { x: 0, z: 15 }, { x: 0, z: -15 },
-      { x: 35, z: 0 }, { x: -35, z: 0 }, { x: 0, z: 35 }, { x: 0, z: -35 },
-      { x: 55, z: 0 }, { x: -55, z: 0 }, { x: 0, z: 55 }, { x: 0, z: -55 },
-      { x: 75, z: 0 }, { x: -75, z: 0 }, { x: 0, z: 75 }, { x: 0, z: -75 },
+      { x: 25, z: 0 }, { x: -25, z: 0 }, { x: 0, z: 25 }, { x: 0, z: -25 },
+      { x: 65, z: 0 }, { x: -65, z: 0 }, { x: 0, z: 65 }, { x: 0, z: -65 },
+      { x: 110, z: 0 }, { x: -110, z: 0 }, { x: 0, z: 110 }, { x: 0, z: -110 },
+      { x: 160, z: 0 }, { x: -160, z: 0 }, { x: 0, z: 160 }, { x: 0, z: -160 },
+      { x: -90, z: -90 }, { x: 90, z: -90 }, { x: -90, z: 90 }, { x: 90, z: 90 },
+      { x: -150, z: -150 }, { x: 150, z: -150 }, { x: -150, z: 150 }, { x: 150, z: 150 },
     ];
     for (const lp of lightPositions) {
       const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 5, 6), poleMat);
@@ -644,44 +641,45 @@ export default class Game {
       const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.2, 6, 6), lightMat);
       bulb.position.set(lp.x, 5, lp.z);
       this.scene.add(bulb);
-      const pl = new THREE.PointLight(0xffeecc, 0.5, 20);
+      const pl = new THREE.PointLight(0xffeecc, 0.5, 25);
       pl.position.set(lp.x, 4.8, lp.z);
       this.scene.add(pl);
     }
 
-    // Downtown: fire hydrants, benches
     const hydrantMat = new THREE.MeshLambertMaterial({ color: 0xcc2222 });
-    const hydrants = [{ x: -38, z: -38 }, { x: -72, z: -38 }, { x: -38, z: -72 }];
+    const hydrants = [
+      { x: -80, z: -80 }, { x: -140, z: -80 }, { x: -80, z: -140 },
+      { x: -160, z: -60 }, { x: -60, z: -160 },
+    ];
     for (const h of hydrants) {
       const hydrant = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.6, 8), hydrantMat);
       hydrant.position.set(h.x, 0.3, h.z);
       this.scene.add(hydrant);
     }
 
-    // Industrial: scattered containers (visual only, no collision)
     const containerColors = [0x2266aa, 0xcc3333, 0x22aa44, 0xddaa22, 0x884488];
     const containerPositions = [
-      { x: 45, z: -78, r: 0.3 }, { x: 48, z: -55, r: -0.2 },
-      { x: 85, z: -55, r: 0.5 }, { x: 45, z: -42, r: Math.PI / 3 },
-      { x: 88, z: -78, r: -0.4 },
+      { x: 100, z: -160, r: 0.3 }, { x: 110, z: -130, r: -0.2 },
+      { x: 170, z: -130, r: 0.5 }, { x: 100, z: -100, r: Math.PI / 3 },
+      { x: 180, z: -160, r: -0.4 }, { x: 140, z: -100, r: 0.8 },
+      { x: 190, z: -100, r: -0.6 }, { x: 120, z: -180, r: 0.1 },
     ];
     for (let i = 0; i < containerPositions.length; i++) {
       const cp = containerPositions[i];
       const c = new THREE.Mesh(
-        new THREE.BoxGeometry(3, 3, 8),
+        new THREE.BoxGeometry(3.5, 3.5, 9),
         new THREE.MeshLambertMaterial({ color: containerColors[i % containerColors.length] })
       );
-      c.position.set(cp.x, 1.5, cp.z);
+      c.position.set(cp.x, 1.75, cp.z);
       c.rotation.y = cp.r;
       c.castShadow = true;
       this.scene.add(c);
     }
 
-    // Industrial: barrels
     const barrelMat = new THREE.MeshLambertMaterial({ color: 0x556644 });
     const barrels = [
-      { x: 45, z: -50 }, { x: 47, z: -48 }, { x: 85, z: -50 },
-      { x: 87, z: -48 }, { x: 45, z: -85 },
+      { x: 100, z: -110 }, { x: 103, z: -108 }, { x: 170, z: -110 },
+      { x: 173, z: -108 }, { x: 100, z: -170 }, { x: 160, z: -180 },
     ];
     for (const b of barrels) {
       const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.8, 8), barrelMat);
@@ -689,45 +687,33 @@ export default class Game {
       this.scene.add(barrel);
     }
 
-    // Favela: market stalls and tarps
     const stallMat = new THREE.MeshLambertMaterial({ color: 0xCC8844 });
     const stallPositions = [
-      { x: -45, z: 55 }, { x: -73, z: 62 }, { x: -45, z: 78 },
+      { x: -100, z: 110 }, { x: -140, z: 125 }, { x: -100, z: 160 },
+      { x: -160, z: 160 }, { x: -80, z: 200 },
     ];
     for (const sp of stallPositions) {
-      const stall = new THREE.Mesh(new THREE.BoxGeometry(3, 2.5, 3), stallMat);
-      stall.position.set(sp.x, 1.25, sp.z);
+      const stall = new THREE.Mesh(new THREE.BoxGeometry(3.5, 2.8, 3.5), stallMat);
+      stall.position.set(sp.x, 1.4, sp.z);
       stall.castShadow = true;
       this.scene.add(stall);
       const awning = new THREE.Mesh(
-        new THREE.BoxGeometry(4, 0.1, 4),
+        new THREE.BoxGeometry(4.5, 0.1, 4.5),
         new THREE.MeshLambertMaterial({ color: 0xdd6633 })
       );
-      awning.position.set(sp.x, 2.6, sp.z);
+      awning.position.set(sp.x, 2.9, sp.z);
       this.scene.add(awning);
     }
 
-    // Favela: laundry lines between houses (visual)
-    const lineMat2 = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    const laundryLines = [
-      { x1: -65, z1: 55, x2: -53, z2: 55, y: 3 },
-      { x1: -65, z1: 65, x2: -53, z2: 65, y: 2.8 },
-    ];
-    for (const ll of laundryLines) {
-      const line = new THREE.Mesh(new THREE.BoxGeometry(Math.hypot(ll.x2 - ll.x1, ll.z2 - ll.z1), 0.02, 0.02), lineMat2);
-      line.position.set((ll.x1 + ll.x2) / 2, ll.y, (ll.z1 + ll.z2) / 2);
-      line.rotation.y = Math.atan2(ll.z2 - ll.z1, ll.x2 - ll.x1);
-      this.scene.add(line);
-    }
-
-    // Suburb: trees (visual, no collision)
     const trunkMat = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
     const leafMat = new THREE.MeshLambertMaterial({ color: 0x228833 });
     const treePositions = [
-      { x: 48, z: 48 }, { x: 65, z: 48 }, { x: 82, z: 48 },
-      { x: 48, z: 65 }, { x: 82, z: 65 },
-      { x: 48, z: 82 }, { x: 65, z: 82 }, { x: 82, z: 82 },
-      { x: 90, z: 55 }, { x: 90, z: 72 },
+      { x: 100, z: 100 }, { x: 130, z: 100 }, { x: 160, z: 100 },
+      { x: 100, z: 130 }, { x: 160, z: 130 },
+      { x: 100, z: 160 }, { x: 130, z: 160 }, { x: 160, z: 160 },
+      { x: 190, z: 110 }, { x: 190, z: 150 },
+      { x: 110, z: 190 }, { x: 150, z: 190 },
+      { x: 180, z: 180 }, { x: 120, z: 120 },
     ];
     for (const tp of treePositions) {
       const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.2, 3, 6), trunkMat);
@@ -739,13 +725,10 @@ export default class Game {
       this.scene.add(leaves);
     }
 
-    // Suburb: fences (visual)
     const fenceMat = new THREE.MeshLambertMaterial({ color: 0x8B7355 });
     const fences = [
-      { x: 55, z: 48, w: 10, d: 0.15 },
-      { x: 72, z: 48, w: 10, d: 0.15 },
-      { x: 55, z: 80, w: 10, d: 0.15 },
-      { x: 72, z: 80, w: 10, d: 0.15 },
+      { x: 110, z: 95, w: 12, d: 0.15 }, { x: 155, z: 95, w: 12, d: 0.15 },
+      { x: 110, z: 165, w: 12, d: 0.15 }, { x: 155, z: 165, w: 12, d: 0.15 },
     ];
     for (const f of fences) {
       const fence = new THREE.Mesh(new THREE.BoxGeometry(f.w, 1.2, f.d), fenceMat);
@@ -753,24 +736,22 @@ export default class Game {
       this.scene.add(fence);
     }
 
-    // Center fountain
     const fountainMat = new THREE.MeshLambertMaterial({ color: 0x889999 });
-    const fountain = new THREE.Mesh(new THREE.CylinderGeometry(3, 3.5, 1, 16), fountainMat);
-    fountain.position.set(0, 0.5, 0);
+    const fountain = new THREE.Mesh(new THREE.CylinderGeometry(4, 4.5, 1.2, 20), fountainMat);
+    fountain.position.set(0, 0.6, 0);
     this.scene.add(fountain);
     const water = new THREE.Mesh(
-      new THREE.CylinderGeometry(2.7, 2.7, 0.1, 16),
+      new THREE.CylinderGeometry(3.6, 3.6, 0.1, 20),
       new THREE.MeshLambertMaterial({ color: 0x3388cc, transparent: true, opacity: 0.7 })
     );
-    water.position.set(0, 1, 0);
+    water.position.set(0, 1.2, 0);
     this.scene.add(water);
 
-    // Zone signs
     const signs = [
-      { x: -40, z: -40, text: 'DOWNTOWN' },
-      { x: 45, z: -40, text: 'INDUSTRIAL' },
-      { x: -40, z: 45, text: 'FAVELA' },
-      { x: 45, z: 45, text: 'SUBURBIO' },
+      { x: -100, z: -100, text: 'DOWNTOWN' },
+      { x: 100, z: -100, text: 'INDUSTRIAL' },
+      { x: -100, z: 100, text: 'FAVELA' },
+      { x: 100, z: 100, text: 'SUBURBIO' },
     ];
     for (const sg of signs) {
       const signCanvas = document.createElement('canvas');
@@ -786,8 +767,8 @@ export default class Game {
       const tex = new THREE.CanvasTexture(signCanvas);
       const signMat = new THREE.SpriteMaterial({ map: tex, transparent: true });
       const sign = new THREE.Sprite(signMat);
-      sign.position.set(sg.x, 3, sg.z);
-      sign.scale.set(4, 2, 1);
+      sign.position.set(sg.x, 4, sg.z);
+      sign.scale.set(5, 2.5, 1);
       this.scene.add(sign);
     }
   }
@@ -1047,18 +1028,16 @@ export default class Game {
       case 3: addWall(-hw, 0, wt, house.d); addWall(0, hd, house.w, wt); addWall(0, -hd, house.w, wt); addDoorWall(hw, 0, wt, house.d, false); break;
     }
 
-    // Windows on exterior walls
-    if (hh >= 5) {
+    if (hh >= 6) {
       const winW = 0.8;
       const winH = 1.0;
-      const cols = Math.floor(house.w / 3);
+      const cols = Math.floor(house.w / 3.5);
       const rows = Math.floor(hh / 4);
       for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
-          const wx = -house.w / 2 + 1.5 + c * (house.w / (cols + 0.5));
+          const wx = -house.w / 2 + 1.8 + c * (house.w / (cols + 0.3));
           const wy = 2 + r * 3.5;
           if (wy > hh - 1) continue;
-
           const win = new THREE.Mesh(new THREE.PlaneGeometry(winW, winH), windowMat);
           win.position.set(wx, wy, -hd - 0.16);
           group.add(win);
@@ -1070,7 +1049,7 @@ export default class Game {
       }
     }
 
-    const roofLight = new THREE.PointLight(0xffe4b5, 0.5, 14);
+    const roofLight = new THREE.PointLight(0xffe4b5, 0.5, 16);
     roofLight.position.set(0, hh - 0.3, 0);
     group.add(roofLight);
 
@@ -1098,17 +1077,14 @@ export default class Game {
     this.scene.add(group);
     this.houses3D.set(house.id, group);
 
-    // PER-WALL collision bounds in WORLD coordinates
     const hx = house.x;
     const hz = house.z;
     const push = (minX: number, maxX: number, minZ: number, maxZ: number) => {
       this.houseBounds.push({ minX, maxX, minZ, maxZ });
     };
-
     const addWallBounds = (cx: number, cz: number, w: number, d: number) => {
       push(hx + cx - w / 2, hx + cx + w / 2, hz + cz - d / 2, hz + cz + d / 2);
     };
-
     const addDoorWallBounds = (cx: number, cz: number, wallW: number, wallD: number, isHorizontal: boolean) => {
       if (isHorizontal) {
         const segW = (wallW - doorW) / 2;
