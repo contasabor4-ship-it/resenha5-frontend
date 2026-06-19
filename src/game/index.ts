@@ -86,6 +86,8 @@ export default class Game {
   private wastedFadeTimer = 0;
   private deathAnimProgress = 0;
   private deathCamAngle = 0;
+  private shopItems: { id: string; name: string; price: number; category: string }[] = [];
+  private shopOpen = false;
 
   constructor(container: HTMLElement, onStateChange?: (state: GameState) => void) {
     this.container = container;
@@ -123,13 +125,6 @@ export default class Game {
     dir.shadow.camera.top = 100;
     dir.shadow.camera.bottom = -100;
     this.scene.add(dir);
-
-    const groundGeo = new THREE.PlaneGeometry(this.worldSize, this.worldSize);
-    const groundMat = new THREE.MeshLambertMaterial({ color: 0x3a7d44 });
-    const ground = new THREE.Mesh(groundGeo, groundMat);
-    ground.rotation.x = -Math.PI / 2;
-    ground.receiveShadow = true;
-    this.scene.add(ground);
 
     this.createWeaponArms();
     this.createCrosshair();
@@ -237,6 +232,26 @@ export default class Game {
       const mag2 = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.1, 0.05), gunMetal);
       mag2.position.set(0.2, -0.14, -0.7);
       this.weaponArms.add(mag2);
+    } else if (weaponName === 'katana') {
+      const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, 0.2, 8), new THREE.MeshLambertMaterial({ color: 0x2a1a0a }));
+      handle.position.set(0.2, -0.1, -0.72);
+      handle.rotation.x = 0.3;
+      this.weaponArms.add(handle);
+      const guard = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.025, 0.04), gunMetal);
+      guard.position.set(0.2, -0.06, -0.82);
+      this.weaponArms.add(guard);
+      const blade = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.06, 0.55), new THREE.MeshLambertMaterial({ color: 0xcccccc }));
+      blade.position.set(0.2, -0.01, -1.12);
+      blade.rotation.x = -0.1;
+      this.weaponArms.add(blade);
+      const edge = new THREE.Mesh(new THREE.BoxGeometry(0.005, 0.065, 0.55), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+      edge.position.set(0.2, -0.01, -1.12);
+      edge.rotation.x = -0.1;
+      this.weaponArms.add(edge);
+      const tip = new THREE.Mesh(new THREE.ConeGeometry(0.015, 0.08, 4), new THREE.MeshLambertMaterial({ color: 0xcccccc }));
+      tip.position.set(0.2, -0.01, -1.43);
+      tip.rotation.x = Math.PI / 2 - 0.1;
+      this.weaponArms.add(tip);
     }
   }
 
@@ -281,10 +296,11 @@ export default class Game {
       this.socket?.emit('join', { nickname });
     });
 
-    this.socket.on('welcome', (data: { player: PlayerData; vehicles: VehicleData[]; houses: HouseData[]; weapons: Record<string, WeaponInfo>; worldSize: number }) => {
+    this.socket.on('welcome', (data: { player: PlayerData; vehicles: VehicleData[]; houses: HouseData[]; weapons: Record<string, WeaponInfo>; shopItems: { id: string; name: string; price: number; category: string }[]; worldSize: number }) => {
       this.playerData = data.player;
       this.weapons = data.weapons;
       this.worldSize = data.worldSize;
+      this.shopItems = data.shopItems || [];
       this.state = 'playing';
       this.onStateChange?.('playing');
       this.setupWorld(data.vehicles, data.houses);
@@ -364,6 +380,16 @@ export default class Game {
 
     this.socket.on('killfeed', (killfeed: any[]) => {
       this.updateKillfeed(killfeed);
+    });
+
+    this.socket.on('shop_success', (data: { itemId: string; money: number }) => {
+      if (this.playerData) this.playerData.money = data.money;
+      this.updateHUD();
+      this.showShopNotification(`Comprou ${this.shopItems.find(i => i.id === data.itemId)?.name || data.itemId}!`);
+    });
+
+    this.socket.on('shop_error', (msg: string) => {
+      this.showShopNotification(msg);
     });
 
     this.socket.on('disconnect', () => {
@@ -494,29 +520,172 @@ export default class Game {
       this.createHouse3D(h);
     }
 
-    for (let x = -this.worldSize / 2; x <= this.worldSize / 2; x += 20) {
-      const roadGeo = new THREE.BoxGeometry(8, 0.05, this.worldSize);
-      const roadMat = new THREE.MeshLambertMaterial({ color: 0x333333 });
-      const road = new THREE.Mesh(roadGeo, roadMat);
-      road.position.set(x, 0.03, 0);
-      this.scene.add(road);
-      const lineGeo = new THREE.BoxGeometry(0.1, 0.06, this.worldSize);
-      const lineMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
-      const line = new THREE.Mesh(lineGeo, lineMat);
-      line.position.set(x, 0.06, 0);
-      this.scene.add(line);
+    // Ground
+    const groundGeo = new THREE.PlaneGeometry(this.worldSize, this.worldSize);
+    const groundMat = new THREE.MeshLambertMaterial({ color: 0x4a7a3d });
+    const ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    this.scene.add(ground);
+
+    // Zone ground patches (colored ground under each zone)
+    const zonePatches = [
+      { x: -60, z: -60, w: 40, d: 40, color: 0x555555 },
+      { x: 65, z: -65, w: 40, d: 40, color: 0x887744 },
+      { x: -60, z: 65, w: 40, d: 40, color: 0xc4a060 },
+      { x: 65, z: 65, w: 40, d: 40, color: 0x3a7d44 },
+    ];
+    for (const z of zonePatches) {
+      const pGeo = new THREE.PlaneGeometry(z.w, z.d);
+      const pMat = new THREE.MeshLambertMaterial({ color: z.color });
+      const pMesh = new THREE.Mesh(pGeo, pMat);
+      pMesh.rotation.x = -Math.PI / 2;
+      pMesh.position.set(z.x, 0.01, z.z);
+      pMesh.receiveShadow = true;
+      this.scene.add(pMesh);
     }
-    for (let z = -this.worldSize / 2; z <= this.worldSize / 2; z += 20) {
-      const roadGeo = new THREE.BoxGeometry(this.worldSize, 0.05, 8);
-      const roadMat = new THREE.MeshLambertMaterial({ color: 0x333333 });
-      const road = new THREE.Mesh(roadGeo, roadMat);
-      road.position.set(0, 0.03, z);
+
+    // Roads (just visual, no collision)
+    const roadMat = new THREE.MeshLambertMaterial({ color: 0x333333 });
+    const lineMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+
+    // Main cross roads through center
+    const mainH = new THREE.Mesh(new THREE.BoxGeometry(this.worldSize, 0.06, 10), roadMat);
+    mainH.position.set(0, 0.03, 0);
+    this.scene.add(mainH);
+    const mainV = new THREE.Mesh(new THREE.BoxGeometry(10, 0.06, this.worldSize), roadMat);
+    mainV.position.set(0, 0.03, 0);
+    this.scene.add(mainV);
+
+    // Center line markings
+    const lineH = new THREE.Mesh(new THREE.BoxGeometry(this.worldSize, 0.07, 0.15), lineMat);
+    lineH.position.set(0, 0.06, 0);
+    this.scene.add(lineH);
+    const lineV = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.07, this.worldSize), lineMat);
+    lineV.position.set(0, 0.06, 0);
+    this.scene.add(lineV);
+
+    // Secondary roads per zone
+    const secRoads = [
+      { x: -60, z: -60, w: 8, d: 40 }, { x: -60, z: -60, w: 40, d: 8 },
+      { x: 65, z: -65, w: 8, d: 40 }, { x: 65, z: -65, w: 40, d: 8 },
+      { x: -60, z: 65, w: 8, d: 40 }, { x: -60, z: 65, w: 40, d: 8 },
+      { x: 65, z: 65, w: 8, d: 40 }, { x: 65, z: 65, w: 40, d: 8 },
+    ];
+    for (const r of secRoads) {
+      const rGeo = new THREE.BoxGeometry(r.w, 0.05, r.d);
+      const road = new THREE.Mesh(rGeo, roadMat);
+      road.position.set(r.x, 0.03, r.z);
       this.scene.add(road);
-      const lineGeo = new THREE.BoxGeometry(this.worldSize, 0.06, 0.1);
-      const lineMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
-      const line = new THREE.Mesh(lineGeo, lineMat);
-      line.position.set(0, 0.06, z);
-      this.scene.add(line);
+    }
+
+    this.createDeco();
+  }
+
+  private createDeco() {
+    const containerColors = [0x2266aa, 0xcc3333, 0x22aa44, 0xddaa22];
+
+    // Industrial: containers (only in NE zone, far from spawn)
+    const containerPositions = [
+      { x: 48, z: -68, r: 0 }, { x: 55, z: -68, r: 0.2 }, { x: 62, z: -68, r: -0.1 },
+      { x: 48, z: -82, r: 0.5 }, { x: 55, z: -82, r: 0 },
+      { x: 80, z: -55, r: Math.PI / 2 }, { x: 80, z: -48, r: Math.PI / 2 + 0.3 },
+    ];
+    for (let i = 0; i < containerPositions.length; i++) {
+      const cp = containerPositions[i];
+      const cMat = new THREE.MeshLambertMaterial({ color: containerColors[i % containerColors.length] });
+      const c = new THREE.Mesh(new THREE.BoxGeometry(3, 3, 8), cMat);
+      c.position.set(cp.x, 1.5, cp.z);
+      c.rotation.y = cp.r;
+      c.castShadow = true;
+      this.scene.add(c);
+    }
+
+    // Favela: market stalls (only in SW zone)
+    const stallMat = new THREE.MeshLambertMaterial({ color: 0xCC8844 });
+    const stallPositions = [
+      { x: -58, z: 55 }, { x: -48, z: 65 }, { x: -68, z: 75 },
+    ];
+    for (const sp of stallPositions) {
+      const stall = new THREE.Mesh(new THREE.BoxGeometry(3, 2.5, 3), stallMat);
+      stall.position.set(sp.x, 1.25, sp.z);
+      stall.castShadow = true;
+      this.scene.add(stall);
+      const awning = new THREE.Mesh(new THREE.BoxGeometry(4, 0.1, 4), new THREE.MeshLambertMaterial({ color: 0xdd6633 }));
+      awning.position.set(sp.x, 2.6, sp.z);
+      this.scene.add(awning);
+    }
+
+    // Suburb: trees (SE zone)
+    const trunkMat = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
+    const leafMat = new THREE.MeshLambertMaterial({ color: 0x228833 });
+    const treePositions = [
+      { x: 45, z: 45 }, { x: 65, z: 45 }, { x: 85, z: 45 },
+      { x: 45, z: 65 }, { x: 65, z: 65 }, { x: 85, z: 65 },
+      { x: 45, z: 85 }, { x: 65, z: 85 }, { x: 85, z: 85 },
+    ];
+    for (const tp of treePositions) {
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.2, 3, 6), trunkMat);
+      trunk.position.set(tp.x, 1.5, tp.z);
+      this.scene.add(trunk);
+      const leaves = new THREE.Mesh(new THREE.SphereGeometry(1.8, 8, 6), leafMat);
+      leaves.position.set(tp.x, 4, tp.z);
+      leaves.castShadow = true;
+      this.scene.add(leaves);
+    }
+
+    // Center: fountain (NO collision bounds)
+    const fountainMat = new THREE.MeshLambertMaterial({ color: 0x889999 });
+    const fountain = new THREE.Mesh(new THREE.CylinderGeometry(3, 3.5, 1, 16), fountainMat);
+    fountain.position.set(0, 0.5, 0);
+    this.scene.add(fountain);
+    const water = new THREE.Mesh(new THREE.CylinderGeometry(2.7, 2.7, 0.1, 16), new THREE.MeshLambertMaterial({ color: 0x3388cc, transparent: true, opacity: 0.7 }));
+    water.position.set(0, 1, 0);
+    this.scene.add(water);
+
+    // Street lights (no collision)
+    const poleMat = new THREE.MeshLambertMaterial({ color: 0x444444 });
+    const lightMat = new THREE.MeshBasicMaterial({ color: 0xffffcc });
+    const lightPositions = [
+      { x: 20, z: 0 }, { x: -20, z: 0 }, { x: 0, z: 20 }, { x: 0, z: -20 },
+      { x: 40, z: 0 }, { x: -40, z: 0 }, { x: 0, z: 40 }, { x: 0, z: -40 },
+    ];
+    for (const lp of lightPositions) {
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 5, 6), poleMat);
+      pole.position.set(lp.x, 2.5, lp.z);
+      this.scene.add(pole);
+      const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.2, 6, 6), lightMat);
+      bulb.position.set(lp.x, 5, lp.z);
+      this.scene.add(bulb);
+      const pl = new THREE.PointLight(0xffeecc, 0.6, 25);
+      pl.position.set(lp.x, 4.8, lp.z);
+      this.scene.add(pl);
+    }
+
+    // Zone signs
+    const signs = [
+      { x: -55, z: -40, text: 'CENTRO' },
+      { x: 55, z: -40, text: 'INDUSTRIAL' },
+      { x: -55, z: 40, text: 'FAVELA' },
+      { x: 55, z: 40, text: 'SUBURBIO' },
+    ];
+    for (const sg of signs) {
+      const signCanvas = document.createElement('canvas');
+      signCanvas.width = 256;
+      signCanvas.height = 128;
+      const ctx = signCanvas.getContext('2d')!;
+      ctx.fillStyle = '#222222';
+      ctx.fillRect(0, 0, 256, 128);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 32px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText(sg.text, 128, 75);
+      const tex = new THREE.CanvasTexture(signCanvas);
+      const signMat = new THREE.SpriteMaterial({ map: tex, transparent: true });
+      const sign = new THREE.Sprite(signMat);
+      sign.position.set(sg.x, 3, sg.z);
+      sign.scale.set(4, 2, 1);
+      this.scene.add(sign);
     }
   }
 
@@ -724,6 +893,8 @@ export default class Game {
     const couchMat = new THREE.MeshLambertMaterial({ color: 0x4a6b8a });
     const tableMat = new THREE.MeshLambertMaterial({ color: 0x5c3a1e });
     const shelfMat = new THREE.MeshLambertMaterial({ color: 0x696969 });
+    const metalMat = new THREE.MeshLambertMaterial({ color: 0x555555 });
+    const crateMat = new THREE.MeshLambertMaterial({ color: 0x8B6914 });
 
     const floor = new THREE.Mesh(new THREE.BoxGeometry(house.w, 0.15, house.d), floorMat);
     floor.position.y = 0.075;
@@ -734,12 +905,21 @@ export default class Game {
     ceiling.position.y = hh;
     group.add(ceiling);
 
-    const roofColor = house.roofColor || 0x8B0000;
-    const roofGeo = new THREE.ConeGeometry(Math.max(house.w, house.d) * 0.72, 2.5, 4);
-    const roof = new THREE.Mesh(roofGeo, new THREE.MeshLambertMaterial({ color: roofColor }));
-    roof.position.y = hh + 1.25;
-    roof.rotation.y = Math.PI / 4;
-    group.add(roof);
+    // Roof varies by type
+    if (house.name === 'Predio' || house.name === 'Escritorio') {
+      const roofGeo = new THREE.BoxGeometry(house.w + 0.5, 0.5, house.d + 0.5);
+      const roof = new THREE.Mesh(roofGeo, new THREE.MeshLambertMaterial({ color: house.roofColor || 0x444444 }));
+      roof.position.y = hh + 0.25;
+      group.add(roof);
+    } else if (house.name === 'Container') {
+      // No roof for containers
+    } else {
+      const roofGeo = new THREE.ConeGeometry(Math.max(house.w, house.d) * 0.72, 2, 4);
+      const roof = new THREE.Mesh(roofGeo, new THREE.MeshLambertMaterial({ color: house.roofColor || 0x8B0000 }));
+      roof.position.y = hh + 1;
+      roof.rotation.y = Math.PI / 4;
+      group.add(roof);
+    }
 
     const addWall = (cx: number, cz: number, w: number, d: number) => {
       const wall = new THREE.Mesh(new THREE.BoxGeometry(w, hh, d), wallMat);
@@ -768,6 +948,7 @@ export default class Game {
       }
     };
 
+    // 3 solid walls + 1 wall with door gap
     switch (doorSide) {
       case 0: addWall(0, -hd, house.w, wt); addWall(hw, 0, wt, house.d); addWall(-hw, 0, wt, house.d); addDoorWall(0, hd, house.w, wt, true); break;
       case 1: addWall(hw, 0, wt, house.d); addWall(0, hd, house.w, wt); addWall(0, -hd, house.w, wt); addDoorWall(-hw, 0, wt, house.d, false); break;
@@ -785,35 +966,39 @@ export default class Game {
       this.houseBounds.push({ minX: fx - fw / 2, maxX: fx + fw / 2, minZ: fz - fd / 2, maxZ: fz + fd / 2 });
     };
 
-    if (house.name === 'Casa') {
+    // Interiors by house type
+    if (house.name === 'Predio' || house.name === 'Escritorio') {
+      addBox(-iw * 0.4, -id * 0.3, 2.5, 1, 0.8, couchMat);
+      addBox(iw * 0.4, -id * 0.3, 1.0, 1.5, 0.4, shelfMat);
+      addBox(0, id * 0.3, 3.0, 0.8, 0.8, tableMat);
+      addBox(-iw * 0.4, id * 0.4, 0.8, 1.8, 0.6, shelfMat);
+      addBox(iw * 0.4, id * 0.4, 2.0, 0.8, 1.0, couchMat);
+    } else if (house.name === 'Casa' || house.name === 'Sobrado') {
       addBox(-iw * 0.5, 0, 1.6, 0.7, 0.7, couchMat);
       addBox(iw * 0.4, -id * 0.3, 0.8, 0.45, 0.6, tableMat);
       addBox(iw * 0.6, id * 0.5, 0.5, 1.2, 0.3, shelfMat);
     } else if (house.name === 'Galpao') {
-      addBox(-iw * 0.4, 0, 1.2, 0.5, 1.0, shelfMat);
-      addBox(iw * 0.4, 0, 1.2, 0.5, 1.0, shelfMat);
-      addBox(0, -id * 0.3, 1.5, 0.4, 0.6, furnitureMat);
-    } else if (house.name === 'Loja') {
-      addBox(-iw * 0.5, -id * 0.3, 1.8, 0.7, 0.7, couchMat);
-      addBox(iw * 0.5, 0, 0.6, 1.5, 0.4, shelfMat);
-      addBox(0, id * 0.4, 1.0, 0.45, 0.6, tableMat);
-    } else if (house.name === 'Predio') {
-      addBox(-iw * 0.5, -id * 0.5, 2.0, 0.7, 0.8, couchMat);
-      addBox(iw * 0.5, -id * 0.5, 0.8, 1.5, 0.4, shelfMat);
-      addBox(-iw * 0.5, id * 0.4, 1.5, 0.45, 0.8, tableMat);
-      addBox(iw * 0.5, id * 0.4, 0.8, 1.2, 0.6, furnitureMat);
-    } else if (house.name === 'Mansao') {
-      addBox(-iw * 0.6, -id * 0.5, 2.5, 0.7, 1.0, couchMat);
-      addBox(iw * 0.6, -id * 0.5, 1.0, 1.8, 0.5, shelfMat);
-      addBox(-iw * 0.6, id * 0.4, 1.8, 0.45, 0.8, tableMat);
-      addBox(iw * 0.4, id * 0.4, 1.2, 0.7, 0.7, couchMat);
-      addBox(0, 0, 3.0, 0.04, 3.0, new THREE.MeshLambertMaterial({ color: 0x8b0000 }));
+      addBox(-iw * 0.4, 0, 1.5, 0.6, 1.2, shelfMat);
+      addBox(iw * 0.4, 0, 1.5, 0.6, 1.2, shelfMat);
+      addBox(0, -id * 0.4, 2.0, 0.5, 0.8, furnitureMat);
+      addBox(0, id * 0.4, 1.2, 0.8, 0.6, metalMat);
+    } else if (house.name === 'Container') {
+      addBox(0, 0, 2.0, 0.8, 1.5, crateMat);
+      addBox(-iw * 0.3, -id * 0.3, 0.8, 0.5, 0.8, crateMat);
+    } else if (house.name === 'Bar') {
+      addBox(-iw * 0.5, -id * 0.4, 2.0, 0.8, 0.8, couchMat);
+      addBox(iw * 0.5, 0, 0.6, 1.2, 0.4, shelfMat);
+      addBox(0, id * 0.3, 1.5, 0.5, 0.5, tableMat);
+    } else if (house.name === 'Barraca') {
+      addBox(0, 0, 1.5, 0.5, 1.0, crateMat);
+      addBox(-iw * 0.3, id * 0.3, 0.8, 0.4, 0.6, furnitureMat);
     }
 
     const roofLight = new THREE.PointLight(0xffe4b5, 0.5, 14);
     roofLight.position.set(0, hh - 0.3, 0);
     group.add(roofLight);
 
+    // Label
     const labelCanvas = document.createElement('canvas');
     labelCanvas.width = 256;
     labelCanvas.height = 128;
@@ -838,6 +1023,7 @@ export default class Game {
     label.scale.set(4, 2, 1);
     group.add(label);
 
+    // Easter egg painting
     if (house.isEasterEgg) {
       const frameMat = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
       const frame = new THREE.Mesh(new THREE.BoxGeometry(2.5, 1.8, 0.15), frameMat);
@@ -912,18 +1098,17 @@ export default class Game {
       const closestZ = Math.max(b.minZ, Math.min(newZ, b.maxZ));
       const distX = newX - closestX;
       const distZ = newZ - closestZ;
-      const dist = Math.sqrt(distX * distX + distZ * distZ);
-      if (dist < radius) {
-        if (dist === 0) {
-          const toLeft = newX - b.minX;
-          const toRight = b.maxX - newX;
-          const toFront = newZ - b.minZ;
-          const toBack = b.maxZ - newZ;
-          const minPen = Math.min(toLeft, toRight, toFront, toBack);
-          if (minPen === toLeft) newX = b.minX - radius;
-          else if (minPen === toRight) newX = b.maxX + radius;
-          else if (minPen === toFront) newZ = b.minZ - radius;
-          else newZ = b.maxZ + radius;
+      const distSq = distX * distX + distZ * distZ;
+      if (distSq < radius * radius) {
+        const dist = Math.sqrt(distSq);
+        if (dist < 0.001) {
+          const cx = (b.minX + b.maxX) / 2;
+          const cz = (b.minZ + b.maxZ) / 2;
+          const pushX = newX - cx;
+          const pushZ = newZ - cz;
+          const pushLen = Math.sqrt(pushX * pushX + pushZ * pushZ) || 1;
+          newX += (pushX / pushLen) * radius;
+          newZ += (pushZ / pushLen) * radius;
         } else {
           const overlap = radius - dist;
           newX += (distX / dist) * overlap;
@@ -947,11 +1132,16 @@ export default class Game {
       else if (e.code === 'Digit2') this.switchWeapon('shotgun');
       else if (e.code === 'Digit3') this.switchWeapon('smg');
       else if (e.code === 'Digit4') this.switchWeapon('rifle');
+      else if (e.code === 'Digit5') this.switchWeapon('katana');
       else if (e.code === 'KeyR' && this.state === 'dead') {
         this.socket?.emit('respawn');
         this.state = 'playing';
         this.onStateChange?.('playing');
         this.hideWASTED();
+      }
+      else if (e.code === 'Tab' && this.state === 'playing') {
+        e.preventDefault();
+        this.toggleShop();
       }
     });
 
@@ -1069,6 +1259,7 @@ export default class Game {
         <div>Click - Atirar</div>
         <div>E - Veiculo</div>
         <div>F - Sair do veiculo</div>
+        <div>Tab - Loja</div>
         <div>1-4 - Trocar arma</div>
         <div>R - Renascer</div>
       </div>
@@ -1284,6 +1475,122 @@ export default class Game {
     if (this.weaponArms) this.weaponArms.visible = false;
   }
 
+  private toggleShop() {
+    if (this.shopOpen) {
+      this.closeShop();
+    } else {
+      this.openShop();
+    }
+  }
+
+  private openShop() {
+    this.shopOpen = true;
+    if (document.pointerLockElement) document.exitPointerLock();
+
+    const existing = document.getElementById('resenha5-shop');
+    if (existing) existing.remove();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'resenha5-shop';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:60;display:flex;align-items:center;justify-content:center;font-family:Arial,sans-serif;';
+
+    const categories = [
+      { key: 'arma', label: 'Armas', icon: '🔫' },
+      { key: 'consumivel', label: 'Consumiveis', icon: '💊' },
+      { key: 'skin', label: 'Skins', icon: '🎨' },
+    ];
+
+    let activeTab = 'arma';
+
+    const render = () => {
+      const money = this.playerData?.money || 0;
+      const filtered = this.shopItems.filter(i => i.category === activeTab);
+
+      overlay.innerHTML = `
+        <div style="background:#1a1a2e;border-radius:16px;padding:0;width:700px;max-height:80vh;overflow:hidden;border:2px solid #333;">
+          <div style="background:linear-gradient(135deg,#16213e,#0f3460);padding:20px 24px;display:flex;justify-content:space-between;align-items:center;">
+            <div>
+              <h2 style="color:#fff;margin:0;font-size:22px;">Resenha 5 Store</h2>
+              <p style="color:#aaa;margin:4px 0 0;font-size:13px;">Compre itens com dinheiro dos kills</p>
+            </div>
+            <div style="text-align:right;">
+              <div style="color:#4CAF50;font-size:24px;font-weight:bold;">$${money.toLocaleString()}</div>
+              <div style="color:#888;font-size:12px;">Seu saldo</div>
+            </div>
+          </div>
+          <div style="display:flex;border-bottom:1px solid #333;">
+            ${categories.map(c => `
+              <button data-tab="${c.key}" style="flex:1;padding:12px;background:${activeTab === c.key ? '#0f3460' : 'transparent'};color:${activeTab === c.key ? '#4FC3F7' : '#888'};border:none;cursor:pointer;font-size:14px;font-weight:bold;border-bottom:2px solid ${activeTab === c.key ? '#4FC3F7' : 'transparent'};">
+                ${c.icon} ${c.label}
+              </button>
+            `).join('')}
+          </div>
+          <div style="padding:16px 20px;overflow-y:auto;max-height:calc(80vh - 140px);">
+            ${filtered.length === 0 ? '<p style="color:#666;text-align:center;">Nenhum item</p>' :
+            filtered.map(item => {
+              const canBuy = money >= item.price;
+              const owned = item.category === 'arma' && this.playerData?.weapon === item.id.replace('weapon_', '');
+              return `
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;margin-bottom:8px;background:${canBuy ? '#16213e' : '#111'};border-radius:10px;border:1px solid ${canBuy ? '#333' : '#222'};">
+                  <div>
+                    <div style="color:${canBuy ? '#fff' : '#666'};font-size:15px;font-weight:bold;">${item.name}</div>
+                    <div style="color:#4CAF50;font-size:13px;margin-top:2px;">$${item.price.toLocaleString()}</div>
+                  </div>
+                  <button data-buy="${item.id}" ${!canBuy ? 'disabled' : ''} style="padding:8px 20px;background:${canBuy ? '#4CAF50' : '#333'};color:${canBuy ? '#fff' : '#666'};border:none;border-radius:8px;cursor:${canBuy ? 'pointer' : 'not-allowed'};font-weight:bold;font-size:13px;">
+                    ${owned ? 'Equipado' : canBuy ? 'Comprar' : 'Sem grana'}
+                  </button>
+                </div>
+              `;
+            }).join('')}
+          </div>
+          <div style="padding:12px 20px;text-align:center;border-top:1px solid #333;">
+            <span style="color:#888;font-size:13px;">Pressione <span style="color:#fff;font-weight:bold;">Tab</span> ou <span style="color:#fff;font-weight:bold;">Esc</span> para fechar</span>
+          </div>
+        </div>
+      `;
+
+      overlay.querySelectorAll('[data-tab]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          activeTab = (btn as HTMLElement).dataset.tab!;
+          render();
+        });
+      });
+
+      overlay.querySelectorAll('[data-buy]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const itemId = (btn as HTMLElement).dataset.buy;
+          if (itemId) this.socket?.emit('buy_item', { itemId });
+        });
+      });
+    };
+
+    render();
+    document.body.appendChild(overlay);
+
+    const escHandler = (e: KeyboardEvent) => {
+      if (e.code === 'Tab' || e.code === 'Escape') {
+        e.preventDefault();
+        this.closeShop();
+        window.removeEventListener('keydown', escHandler);
+      }
+    };
+    window.addEventListener('keydown', escHandler);
+  }
+
+  private closeShop() {
+    this.shopOpen = false;
+    const el = document.getElementById('resenha5-shop');
+    if (el) el.remove();
+  }
+
+  private showShopNotification(msg: string) {
+    const n = document.createElement('div');
+    n.style.cssText = 'position:fixed;top:15%;left:50%;transform:translateX(-50%);color:#fff;background:rgba(0,0,0,0.85);padding:12px 28px;border-radius:10px;font-size:16px;font-family:Arial;z-index:70;border:1px solid #4CAF50;pointer-events:none;';
+    n.textContent = msg;
+    document.body.appendChild(n);
+    setTimeout(() => n.remove(), 2500);
+  }
+
   destroy() {
     if (this.animFrameId) cancelAnimationFrame(this.animFrameId);
     this.socket?.disconnect();
@@ -1296,5 +1603,7 @@ export default class Game {
     const eHint = document.getElementById('e-hint');
     if (eHint) eHint.remove();
     if (this.wastedOverlay) this.wastedOverlay.remove();
+    const shop = document.getElementById('resenha5-shop');
+    if (shop) shop.remove();
   }
 }

@@ -64,6 +64,7 @@ export default function Resenha5Page() {
             <p><span className="text-green-400 font-bold">Click</span> — Atirar</p>
             <p><span className="text-green-400 font-bold">E</span> — Entrar no veiculo</p>
             <p><span className="text-green-400 font-bold">F</span> — Sair do veiculo</p>
+            <p><span className="text-green-400 font-bold">Tab</span> — Abrir loja</p>
             <p><span className="text-green-400 font-bold">1-4</span> — Trocar arma</p>
             <p><span className="text-green-400 font-bold">R</span> — Renascer (ao morrer)</p>
             <hr className="border-gray-700 my-2" />
