@@ -361,6 +361,11 @@ export default class Game {
     });
 
     this.socket.on('vehicle_update', (vehicle: VehicleData) => {
+      if (vehicle.driver !== this.socket?.id) {
+        const corrected = this.checkHouseCollision(vehicle.x, vehicle.z, 1.5);
+        vehicle.x = corrected.x;
+        vehicle.z = corrected.z;
+      }
       this.vehicleDataMap.set(vehicle.id, vehicle);
       this.updateVehicle3D(vehicle);
     });
@@ -512,52 +517,25 @@ export default class Game {
   private setupWorld(vehicles: VehicleData[], houses: HouseData[]) {
     this.houseBounds = [];
     this.vehicleDataMap.clear();
-    for (const v of vehicles) {
-      this.createVehicle3D(v);
-      this.vehicleDataMap.set(v.id, v);
-    }
-    for (const h of houses) {
-      this.createHouse3D(h);
-    }
 
-    // Ground
-    const groundGeo = new THREE.PlaneGeometry(this.worldSize, this.worldSize);
-    const groundMat = new THREE.MeshLambertMaterial({ color: 0x4a7a3d });
-    const ground = new THREE.Mesh(groundGeo, groundMat);
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(this.worldSize, this.worldSize),
+      new THREE.MeshLambertMaterial({ color: 0x3a7d44 })
+    );
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
     this.scene.add(ground);
 
-    // Zone ground patches (colored ground under each zone)
-    const zonePatches = [
-      { x: -60, z: -60, w: 40, d: 40, color: 0x555555 },
-      { x: 65, z: -65, w: 40, d: 40, color: 0x887744 },
-      { x: -60, z: 65, w: 40, d: 40, color: 0xc4a060 },
-      { x: 65, z: 65, w: 40, d: 40, color: 0x3a7d44 },
-    ];
-    for (const z of zonePatches) {
-      const pGeo = new THREE.PlaneGeometry(z.w, z.d);
-      const pMat = new THREE.MeshLambertMaterial({ color: z.color });
-      const pMesh = new THREE.Mesh(pGeo, pMat);
-      pMesh.rotation.x = -Math.PI / 2;
-      pMesh.position.set(z.x, 0.01, z.z);
-      pMesh.receiveShadow = true;
-      this.scene.add(pMesh);
-    }
-
-    // Roads (just visual, no collision)
     const roadMat = new THREE.MeshLambertMaterial({ color: 0x333333 });
     const lineMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
 
-    // Main cross roads through center
-    const mainH = new THREE.Mesh(new THREE.BoxGeometry(this.worldSize, 0.06, 10), roadMat);
+    const mainH = new THREE.Mesh(new THREE.BoxGeometry(this.worldSize, 0.06, 8), roadMat);
     mainH.position.set(0, 0.03, 0);
     this.scene.add(mainH);
-    const mainV = new THREE.Mesh(new THREE.BoxGeometry(10, 0.06, this.worldSize), roadMat);
+    const mainV = new THREE.Mesh(new THREE.BoxGeometry(8, 0.06, this.worldSize), roadMat);
     mainV.position.set(0, 0.03, 0);
     this.scene.add(mainV);
 
-    // Center line markings
     const lineH = new THREE.Mesh(new THREE.BoxGeometry(this.worldSize, 0.07, 0.15), lineMat);
     lineH.position.set(0, 0.06, 0);
     this.scene.add(lineH);
@@ -565,85 +543,33 @@ export default class Game {
     lineV.position.set(0, 0.06, 0);
     this.scene.add(lineV);
 
-    // Secondary roads per zone
-    const secRoads = [
-      { x: -60, z: -60, w: 8, d: 40 }, { x: -60, z: -60, w: 40, d: 8 },
-      { x: 65, z: -65, w: 8, d: 40 }, { x: 65, z: -65, w: 40, d: 8 },
-      { x: -60, z: 65, w: 8, d: 40 }, { x: -60, z: 65, w: 40, d: 8 },
-      { x: 65, z: 65, w: 8, d: 40 }, { x: 65, z: 65, w: 40, d: 8 },
+    const zonePatches = [
+      { x: -60, z: -60, w: 50, d: 50, color: 0x555555 },
+      { x: 68, z: -58, w: 40, d: 55, color: 0x887744 },
+      { x: -58, z: 68, w: 55, d: 40, color: 0xc4a060 },
+      { x: 68, z: 68, w: 40, d: 40, color: 0x4a7a3d },
     ];
-    for (const r of secRoads) {
-      const rGeo = new THREE.BoxGeometry(r.w, 0.05, r.d);
-      const road = new THREE.Mesh(rGeo, roadMat);
-      road.position.set(r.x, 0.03, r.z);
-      this.scene.add(road);
+    for (const z of zonePatches) {
+      const pMesh = new THREE.Mesh(new THREE.PlaneGeometry(z.w, z.d), new THREE.MeshLambertMaterial({ color: z.color }));
+      pMesh.rotation.x = -Math.PI / 2;
+      pMesh.position.set(z.x, 0.01, z.z);
+      pMesh.receiveShadow = true;
+      this.scene.add(pMesh);
+    }
+
+    for (const v of vehicles) {
+      this.createVehicle3D(v);
+      this.vehicleDataMap.set(v.id, v);
+    }
+
+    for (const h of houses) {
+      this.createHouse3D(h);
     }
 
     this.createDeco();
   }
 
   private createDeco() {
-    const containerColors = [0x2266aa, 0xcc3333, 0x22aa44, 0xddaa22];
-
-    // Industrial: containers (only in NE zone, far from spawn)
-    const containerPositions = [
-      { x: 48, z: -68, r: 0 }, { x: 55, z: -68, r: 0.2 }, { x: 62, z: -68, r: -0.1 },
-      { x: 48, z: -82, r: 0.5 }, { x: 55, z: -82, r: 0 },
-      { x: 80, z: -55, r: Math.PI / 2 }, { x: 80, z: -48, r: Math.PI / 2 + 0.3 },
-    ];
-    for (let i = 0; i < containerPositions.length; i++) {
-      const cp = containerPositions[i];
-      const cMat = new THREE.MeshLambertMaterial({ color: containerColors[i % containerColors.length] });
-      const c = new THREE.Mesh(new THREE.BoxGeometry(3, 3, 8), cMat);
-      c.position.set(cp.x, 1.5, cp.z);
-      c.rotation.y = cp.r;
-      c.castShadow = true;
-      this.scene.add(c);
-    }
-
-    // Favela: market stalls (only in SW zone)
-    const stallMat = new THREE.MeshLambertMaterial({ color: 0xCC8844 });
-    const stallPositions = [
-      { x: -58, z: 55 }, { x: -48, z: 65 }, { x: -68, z: 75 },
-    ];
-    for (const sp of stallPositions) {
-      const stall = new THREE.Mesh(new THREE.BoxGeometry(3, 2.5, 3), stallMat);
-      stall.position.set(sp.x, 1.25, sp.z);
-      stall.castShadow = true;
-      this.scene.add(stall);
-      const awning = new THREE.Mesh(new THREE.BoxGeometry(4, 0.1, 4), new THREE.MeshLambertMaterial({ color: 0xdd6633 }));
-      awning.position.set(sp.x, 2.6, sp.z);
-      this.scene.add(awning);
-    }
-
-    // Suburb: trees (SE zone)
-    const trunkMat = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
-    const leafMat = new THREE.MeshLambertMaterial({ color: 0x228833 });
-    const treePositions = [
-      { x: 45, z: 45 }, { x: 65, z: 45 }, { x: 85, z: 45 },
-      { x: 45, z: 65 }, { x: 65, z: 65 }, { x: 85, z: 65 },
-      { x: 45, z: 85 }, { x: 65, z: 85 }, { x: 85, z: 85 },
-    ];
-    for (const tp of treePositions) {
-      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.2, 3, 6), trunkMat);
-      trunk.position.set(tp.x, 1.5, tp.z);
-      this.scene.add(trunk);
-      const leaves = new THREE.Mesh(new THREE.SphereGeometry(1.8, 8, 6), leafMat);
-      leaves.position.set(tp.x, 4, tp.z);
-      leaves.castShadow = true;
-      this.scene.add(leaves);
-    }
-
-    // Center: fountain (NO collision bounds)
-    const fountainMat = new THREE.MeshLambertMaterial({ color: 0x889999 });
-    const fountain = new THREE.Mesh(new THREE.CylinderGeometry(3, 3.5, 1, 16), fountainMat);
-    fountain.position.set(0, 0.5, 0);
-    this.scene.add(fountain);
-    const water = new THREE.Mesh(new THREE.CylinderGeometry(2.7, 2.7, 0.1, 16), new THREE.MeshLambertMaterial({ color: 0x3388cc, transparent: true, opacity: 0.7 }));
-    water.position.set(0, 1, 0);
-    this.scene.add(water);
-
-    // Street lights (no collision)
     const poleMat = new THREE.MeshLambertMaterial({ color: 0x444444 });
     const lightMat = new THREE.MeshBasicMaterial({ color: 0xffffcc });
     const lightPositions = [
@@ -662,31 +588,30 @@ export default class Game {
       this.scene.add(pl);
     }
 
-    // Zone signs
-    const signs = [
-      { x: -55, z: -40, text: 'CENTRO' },
-      { x: 55, z: -40, text: 'INDUSTRIAL' },
-      { x: -55, z: 40, text: 'FAVELA' },
-      { x: 55, z: 40, text: 'SUBURBIO' },
+    const trunkMat = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
+    const leafMat = new THREE.MeshLambertMaterial({ color: 0x228833 });
+    const treePositions = [
+      { x: 50, z: 50 }, { x: 70, z: 50 }, { x: 90, z: 50 },
+      { x: 50, z: 70 }, { x: 70, z: 70 }, { x: 90, z: 70 },
+      { x: 50, z: 90 }, { x: 70, z: 90 }, { x: 90, z: 90 },
     ];
-    for (const sg of signs) {
-      const signCanvas = document.createElement('canvas');
-      signCanvas.width = 256;
-      signCanvas.height = 128;
-      const ctx = signCanvas.getContext('2d')!;
-      ctx.fillStyle = '#222222';
-      ctx.fillRect(0, 0, 256, 128);
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 32px Arial';
-      ctx.textAlign = 'center';
-      ctx.fillText(sg.text, 128, 75);
-      const tex = new THREE.CanvasTexture(signCanvas);
-      const signMat = new THREE.SpriteMaterial({ map: tex, transparent: true });
-      const sign = new THREE.Sprite(signMat);
-      sign.position.set(sg.x, 3, sg.z);
-      sign.scale.set(4, 2, 1);
-      this.scene.add(sign);
+    for (const tp of treePositions) {
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.2, 3, 6), trunkMat);
+      trunk.position.set(tp.x, 1.5, tp.z);
+      this.scene.add(trunk);
+      const leaves = new THREE.Mesh(new THREE.SphereGeometry(1.8, 8, 6), leafMat);
+      leaves.position.set(tp.x, 4, tp.z);
+      leaves.castShadow = true;
+      this.scene.add(leaves);
     }
+
+    const fountainMat = new THREE.MeshLambertMaterial({ color: 0x889999 });
+    const fountain = new THREE.Mesh(new THREE.CylinderGeometry(3, 3.5, 1, 16), fountainMat);
+    fountain.position.set(0, 0.5, 0);
+    this.scene.add(fountain);
+    const water = new THREE.Mesh(new THREE.CylinderGeometry(2.7, 2.7, 0.1, 16), new THREE.MeshLambertMaterial({ color: 0x3388cc, transparent: true, opacity: 0.7 }));
+    water.position.set(0, 1, 0);
+    this.scene.add(water);
   }
 
   private createVehicle3D(vehicle: VehicleData) {
@@ -889,12 +814,6 @@ export default class Game {
     const innerMat = new THREE.MeshLambertMaterial({ color: 0xd2c4a8 });
     const floorMat = new THREE.MeshLambertMaterial({ color: 0x8B7355 });
     const ceilingMat = new THREE.MeshLambertMaterial({ color: 0xc8b89a });
-    const furnitureMat = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
-    const couchMat = new THREE.MeshLambertMaterial({ color: 0x4a6b8a });
-    const tableMat = new THREE.MeshLambertMaterial({ color: 0x5c3a1e });
-    const shelfMat = new THREE.MeshLambertMaterial({ color: 0x696969 });
-    const metalMat = new THREE.MeshLambertMaterial({ color: 0x555555 });
-    const crateMat = new THREE.MeshLambertMaterial({ color: 0x8B6914 });
 
     const floor = new THREE.Mesh(new THREE.BoxGeometry(house.w, 0.15, house.d), floorMat);
     floor.position.y = 0.075;
@@ -905,17 +824,12 @@ export default class Game {
     ceiling.position.y = hh;
     group.add(ceiling);
 
-    // Roof varies by type
     if (house.name === 'Predio' || house.name === 'Escritorio') {
-      const roofGeo = new THREE.BoxGeometry(house.w + 0.5, 0.5, house.d + 0.5);
-      const roof = new THREE.Mesh(roofGeo, new THREE.MeshLambertMaterial({ color: house.roofColor || 0x444444 }));
+      const roof = new THREE.Mesh(new THREE.BoxGeometry(house.w + 0.5, 0.5, house.d + 0.5), new THREE.MeshLambertMaterial({ color: house.roofColor || 0x444444 }));
       roof.position.y = hh + 0.25;
       group.add(roof);
-    } else if (house.name === 'Container') {
-      // No roof for containers
-    } else {
-      const roofGeo = new THREE.ConeGeometry(Math.max(house.w, house.d) * 0.72, 2, 4);
-      const roof = new THREE.Mesh(roofGeo, new THREE.MeshLambertMaterial({ color: house.roofColor || 0x8B0000 }));
+    } else if (house.name !== 'Container') {
+      const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.max(house.w, house.d) * 0.72, 2, 4), new THREE.MeshLambertMaterial({ color: house.roofColor || 0x8B0000 }));
       roof.position.y = hh + 1;
       roof.rotation.y = Math.PI / 4;
       group.add(roof);
@@ -929,7 +843,6 @@ export default class Game {
       const inner = new THREE.Mesh(new THREE.BoxGeometry(w, hh, 0.05), innerMat);
       inner.position.set(cx, hh / 2, cz);
       group.add(inner);
-      this.houseBounds.push({ minX: cx - w / 2, maxX: cx + w / 2, minZ: cz - d / 2, maxZ: cz + d / 2 });
     };
 
     const addDoorWall = (cx: number, cz: number, wallW: number, wallD: number, isHorizontal: boolean) => {
@@ -948,7 +861,6 @@ export default class Game {
       }
     };
 
-    // 3 solid walls + 1 wall with door gap
     switch (doorSide) {
       case 0: addWall(0, -hd, house.w, wt); addWall(hw, 0, wt, house.d); addWall(-hw, 0, wt, house.d); addDoorWall(0, hd, house.w, wt, true); break;
       case 1: addWall(hw, 0, wt, house.d); addWall(0, hd, house.w, wt); addWall(0, -hd, house.w, wt); addDoorWall(-hw, 0, wt, house.d, false); break;
@@ -956,49 +868,10 @@ export default class Game {
       case 3: addWall(-hw, 0, wt, house.d); addWall(0, hd, house.w, wt); addWall(0, -hd, house.w, wt); addDoorWall(hw, 0, wt, house.d, false); break;
     }
 
-    const iw = hw - 1.5;
-    const id = hd - 1.5;
-    const addBox = (fx: number, fz: number, fw: number, fh: number, fd: number, mat: THREE.Material) => {
-      const mesh = new THREE.Mesh(new THREE.BoxGeometry(fw, fh, fd), mat);
-      mesh.position.set(fx, fh / 2 + 0.08, fz);
-      mesh.castShadow = true;
-      group.add(mesh);
-      this.houseBounds.push({ minX: fx - fw / 2, maxX: fx + fw / 2, minZ: fz - fd / 2, maxZ: fz + fd / 2 });
-    };
-
-    // Interiors by house type
-    if (house.name === 'Predio' || house.name === 'Escritorio') {
-      addBox(-iw * 0.4, -id * 0.3, 2.5, 1, 0.8, couchMat);
-      addBox(iw * 0.4, -id * 0.3, 1.0, 1.5, 0.4, shelfMat);
-      addBox(0, id * 0.3, 3.0, 0.8, 0.8, tableMat);
-      addBox(-iw * 0.4, id * 0.4, 0.8, 1.8, 0.6, shelfMat);
-      addBox(iw * 0.4, id * 0.4, 2.0, 0.8, 1.0, couchMat);
-    } else if (house.name === 'Casa' || house.name === 'Sobrado') {
-      addBox(-iw * 0.5, 0, 1.6, 0.7, 0.7, couchMat);
-      addBox(iw * 0.4, -id * 0.3, 0.8, 0.45, 0.6, tableMat);
-      addBox(iw * 0.6, id * 0.5, 0.5, 1.2, 0.3, shelfMat);
-    } else if (house.name === 'Galpao') {
-      addBox(-iw * 0.4, 0, 1.5, 0.6, 1.2, shelfMat);
-      addBox(iw * 0.4, 0, 1.5, 0.6, 1.2, shelfMat);
-      addBox(0, -id * 0.4, 2.0, 0.5, 0.8, furnitureMat);
-      addBox(0, id * 0.4, 1.2, 0.8, 0.6, metalMat);
-    } else if (house.name === 'Container') {
-      addBox(0, 0, 2.0, 0.8, 1.5, crateMat);
-      addBox(-iw * 0.3, -id * 0.3, 0.8, 0.5, 0.8, crateMat);
-    } else if (house.name === 'Bar') {
-      addBox(-iw * 0.5, -id * 0.4, 2.0, 0.8, 0.8, couchMat);
-      addBox(iw * 0.5, 0, 0.6, 1.2, 0.4, shelfMat);
-      addBox(0, id * 0.3, 1.5, 0.5, 0.5, tableMat);
-    } else if (house.name === 'Barraca') {
-      addBox(0, 0, 1.5, 0.5, 1.0, crateMat);
-      addBox(-iw * 0.3, id * 0.3, 0.8, 0.4, 0.6, furnitureMat);
-    }
-
     const roofLight = new THREE.PointLight(0xffe4b5, 0.5, 14);
     roofLight.position.set(0, hh - 0.3, 0);
     group.add(roofLight);
 
-    // Label
     const labelCanvas = document.createElement('canvas');
     labelCanvas.width = 256;
     labelCanvas.height = 128;
@@ -1008,59 +881,27 @@ export default class Game {
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 20px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText(house.name, 128, 40);
+    ctx.fillText(house.name, 128, 50);
     ctx.font = '14px Arial';
     ctx.fillStyle = '#aaaaaa';
-    ctx.fillText('Zona de combate', 128, 70);
-    if (house.isEasterEgg) {
-      ctx.fillStyle = '#FFD700';
-      ctx.fillText('Easter Egg!', 128, 100);
-    }
+    ctx.fillText('Zona de combate', 128, 80);
     const texture = new THREE.CanvasTexture(labelCanvas);
     const labelMat = new THREE.SpriteMaterial({ map: texture, transparent: true });
     const label = new THREE.Sprite(labelMat);
-    label.position.set(0, hh + 3.5, 0);
+    label.position.set(0, hh + 2, 0);
     label.scale.set(4, 2, 1);
     group.add(label);
 
-    // Easter egg painting
-    if (house.isEasterEgg) {
-      const frameMat = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
-      const frame = new THREE.Mesh(new THREE.BoxGeometry(2.5, 1.8, 0.15), frameMat);
-      frame.position.set(0, hh * 0.6, -hd + 0.5);
-      group.add(frame);
-      const paintCanvas = document.createElement('canvas');
-      paintCanvas.width = 512;
-      paintCanvas.height = 360;
-      const pctx = paintCanvas.getContext('2d')!;
-      pctx.fillStyle = '#1a1a2e';
-      pctx.fillRect(0, 0, 512, 360);
-      pctx.fillStyle = '#FFD700';
-      pctx.font = 'bold 28px Arial';
-      pctx.textAlign = 'center';
-      pctx.fillText('Feito por', 256, 50);
-      pctx.fillStyle = '#ffffff';
-      pctx.font = 'bold 36px Arial';
-      pctx.fillText('Hugo O goat', 256, 100);
-      pctx.font = '20px Arial';
-      pctx.fillStyle = '#cccccc';
-      const credits = ['Luiz', 'Henrique', 'Leo', 'Matheus', 'Pedro', 'Daniel', 'Gustavo', 'Haziel', 'Igor', 'Renan', 'Felipe', 'Joao', 'Maquinario', 'Berinjela'];
-      for (let i = 0; i < credits.length; i++) {
-        const col = i < 7 ? 0 : 1;
-        const row = i % 7;
-        pctx.fillText(credits[i], 128 + col * 256, 150 + row * 30);
-      }
-      const paintTexture = new THREE.CanvasTexture(paintCanvas);
-      const paintMat = new THREE.MeshBasicMaterial({ map: paintTexture });
-      const painting = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 1.5), paintMat);
-      painting.position.set(0, hh * 0.6, -hd + 0.43);
-      group.add(painting);
-    }
-
     group.position.set(house.x, 0, house.z);
-    group.userData = { name: house.name };
     this.scene.add(group);
     this.houses3D.set(house.id, group);
+
+    this.houseBounds.push({
+      minX: house.x - hw - wt,
+      maxX: house.x + hw + wt,
+      minZ: house.z - hd - wt,
+      maxZ: house.z + hd + wt,
+    });
   }
 
   private updateVehicle3D(vehicle: VehicleData) {
@@ -1094,26 +935,19 @@ export default class Game {
     let newX = x;
     let newZ = z;
     for (const b of this.houseBounds) {
+      const inside = newX >= b.minX && newX <= b.maxX && newZ >= b.minZ && newZ <= b.maxZ;
+      if (inside) continue;
+
       const closestX = Math.max(b.minX, Math.min(newX, b.maxX));
       const closestZ = Math.max(b.minZ, Math.min(newZ, b.maxZ));
       const distX = newX - closestX;
       const distZ = newZ - closestZ;
       const distSq = distX * distX + distZ * distZ;
-      if (distSq < radius * radius) {
+      if (distSq < radius * radius && distSq > 0.0001) {
         const dist = Math.sqrt(distSq);
-        if (dist < 0.001) {
-          const cx = (b.minX + b.maxX) / 2;
-          const cz = (b.minZ + b.maxZ) / 2;
-          const pushX = newX - cx;
-          const pushZ = newZ - cz;
-          const pushLen = Math.sqrt(pushX * pushX + pushZ * pushZ) || 1;
-          newX += (pushX / pushLen) * radius;
-          newZ += (pushZ / pushLen) * radius;
-        } else {
-          const overlap = radius - dist;
-          newX += (distX / dist) * overlap;
-          newZ += (distZ / dist) * overlap;
-        }
+        const overlap = radius - dist;
+        newX += (distX / dist) * overlap;
+        newZ += (distZ / dist) * overlap;
       }
     }
     return { x: newX, z: newZ };
