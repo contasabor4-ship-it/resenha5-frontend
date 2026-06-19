@@ -992,6 +992,7 @@ export default class Game {
     const innerMat = new THREE.MeshLambertMaterial({ color: 0xd2c4a8 });
     const floorMat = new THREE.MeshLambertMaterial({ color: 0x8B7355 });
     const ceilingMat = new THREE.MeshLambertMaterial({ color: 0xc8b89a });
+    const windowMat = new THREE.MeshBasicMaterial({ color: 0x88bbee, transparent: true, opacity: 0.6 });
 
     const floor = new THREE.Mesh(new THREE.BoxGeometry(house.w, 0.15, house.d), floorMat);
     floor.position.y = 0.075;
@@ -1046,6 +1047,29 @@ export default class Game {
       case 3: addWall(-hw, 0, wt, house.d); addWall(0, hd, house.w, wt); addWall(0, -hd, house.w, wt); addDoorWall(hw, 0, wt, house.d, false); break;
     }
 
+    // Windows on exterior walls
+    if (hh >= 5) {
+      const winW = 0.8;
+      const winH = 1.0;
+      const cols = Math.floor(house.w / 3);
+      const rows = Math.floor(hh / 4);
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const wx = -house.w / 2 + 1.5 + c * (house.w / (cols + 0.5));
+          const wy = 2 + r * 3.5;
+          if (wy > hh - 1) continue;
+
+          const win = new THREE.Mesh(new THREE.PlaneGeometry(winW, winH), windowMat);
+          win.position.set(wx, wy, -hd - 0.16);
+          group.add(win);
+          const win2 = new THREE.Mesh(new THREE.PlaneGeometry(winW, winH), windowMat);
+          win2.position.set(wx, wy, hd + 0.16);
+          win2.rotation.y = Math.PI;
+          group.add(win2);
+        }
+      }
+    }
+
     const roofLight = new THREE.PointLight(0xffe4b5, 0.5, 14);
     roofLight.position.set(0, hh - 0.3, 0);
     group.add(roofLight);
@@ -1074,12 +1098,59 @@ export default class Game {
     this.scene.add(group);
     this.houses3D.set(house.id, group);
 
-    this.houseBounds.push({
-      minX: house.x - hw - wt,
-      maxX: house.x + hw + wt,
-      minZ: house.z - hd - wt,
-      maxZ: house.z + hd + wt,
-    });
+    // PER-WALL collision bounds in WORLD coordinates
+    const hx = house.x;
+    const hz = house.z;
+    const push = (minX: number, maxX: number, minZ: number, maxZ: number) => {
+      this.houseBounds.push({ minX, maxX, minZ, maxZ });
+    };
+
+    const addWallBounds = (cx: number, cz: number, w: number, d: number) => {
+      push(hx + cx - w / 2, hx + cx + w / 2, hz + cz - d / 2, hz + cz + d / 2);
+    };
+
+    const addDoorWallBounds = (cx: number, cz: number, wallW: number, wallD: number, isHorizontal: boolean) => {
+      if (isHorizontal) {
+        const segW = (wallW - doorW) / 2;
+        if (segW > 0.1) {
+          addWallBounds(cx - wallW / 2 + segW / 2, cz, segW, wallD);
+          addWallBounds(cx + wallW / 2 - segW / 2, cz, segW, wallD);
+        }
+      } else {
+        const segD = (wallD - doorW) / 2;
+        if (segD > 0.1) {
+          addWallBounds(cx, cz - wallD / 2 + segD / 2, wallW, segD);
+          addWallBounds(cx, cz + wallD / 2 - segD / 2, wallW, segD);
+        }
+      }
+    };
+
+    switch (doorSide) {
+      case 0:
+        addWallBounds(0, -hd, house.w, wt);
+        addWallBounds(hw, 0, wt, house.d);
+        addWallBounds(-hw, 0, wt, house.d);
+        addDoorWallBounds(0, hd, house.w, wt, true);
+        break;
+      case 1:
+        addWallBounds(hw, 0, wt, house.d);
+        addWallBounds(0, hd, house.w, wt);
+        addWallBounds(0, -hd, house.w, wt);
+        addDoorWallBounds(-hw, 0, wt, house.d, false);
+        break;
+      case 2:
+        addWallBounds(0, hd, house.w, wt);
+        addWallBounds(hw, 0, wt, house.d);
+        addWallBounds(-hw, 0, wt, house.d);
+        addDoorWallBounds(0, -hd, house.w, wt, true);
+        break;
+      case 3:
+        addWallBounds(-hw, 0, wt, house.d);
+        addWallBounds(0, hd, house.w, wt);
+        addWallBounds(0, -hd, house.w, wt);
+        addDoorWallBounds(hw, 0, wt, house.d, false);
+        break;
+    }
   }
 
   private updateVehicle3D(vehicle: VehicleData) {
@@ -1113,9 +1184,6 @@ export default class Game {
     let newX = x;
     let newZ = z;
     for (const b of this.houseBounds) {
-      const inside = newX >= b.minX && newX <= b.maxX && newZ >= b.minZ && newZ <= b.maxZ;
-      if (inside) continue;
-
       const closestX = Math.max(b.minX, Math.min(newX, b.maxX));
       const closestZ = Math.max(b.minZ, Math.min(newZ, b.maxZ));
       const distX = newX - closestX;
