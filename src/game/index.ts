@@ -377,92 +377,90 @@ export default class Game {
     const gunDark = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.8, metalness: 0.3 });
     const woodMat = new THREE.MeshStandardMaterial({ color: 0x5c3a1e, roughness: 0.9 });
 
-    const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.08, 0.5, 8), new THREE.MeshLambertMaterial({ color: 0x334455 }));
-    sleeve.position.set(0.2, -0.1, -0.35);
-    sleeve.rotation.x = Math.PI / 2 + 0.2;
+    const sleeve = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.35, 0.14), new THREE.MeshLambertMaterial({ color: 0x334455 }));
+    sleeve.position.set(0.22, -0.12, -0.5);
     this.weaponArms.add(sleeve);
 
-    const forearm = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.04, 0.35, 8), skinMat);
-    forearm.position.set(0.2, -0.08, -0.62);
-    forearm.rotation.x = Math.PI / 2;
+    const forearm = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.28, 0.1), skinMat);
+    forearm.position.set(0.22, -0.1, -0.72);
     this.weaponArms.add(forearm);
 
-    const hand = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.065, 0.12), skinMat);
-    hand.position.set(0.2, -0.06, -0.76);
+    const hand = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.06, 0.14), skinMat);
+    hand.position.set(0.22, -0.08, -0.9);
     this.weaponArms.add(hand);
 
     if (weaponName === 'pistol') {
       const slide = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.055, 0.28), gunDark);
-      slide.position.set(0.2, -0.02, -0.82);
+      slide.position.set(0.22, -0.04, -0.98);
       this.weaponArms.add(slide);
       const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.08, 6), gunMetal);
       barrel.rotation.x = Math.PI / 2;
-      barrel.position.set(0.2, -0.01, -0.98);
+      barrel.position.set(0.22, -0.03, -1.16);
       this.weaponArms.add(barrel);
       const grip = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.12, 0.06), gunDark);
-      grip.position.set(0.2, -0.14, -0.72);
+      grip.position.set(0.22, -0.18, -0.9);
       grip.rotation.x = 0.3;
       this.weaponArms.add(grip);
     } else if (weaponName === 'shotgun') {
       const stock = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.08, 0.22), woodMat);
-      stock.position.set(0.2, -0.12, -0.58);
+      stock.position.set(0.22, -0.14, -0.78);
       this.weaponArms.add(stock);
       const body = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.07, 0.18), gunDark);
-      body.position.set(0.2, -0.06, -0.76);
+      body.position.set(0.22, -0.08, -0.94);
       this.weaponArms.add(body);
       const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.45, 8), gunMetal);
       barrel.rotation.x = Math.PI / 2;
-      barrel.position.set(0.2, -0.04, -0.96);
+      barrel.position.set(0.22, -0.06, -1.14);
       this.weaponArms.add(barrel);
       const pump = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.04, 0.14), woodMat);
-      pump.position.set(0.2, -0.05, -0.86);
+      pump.position.set(0.22, -0.07, -1.04);
       this.weaponArms.add(pump);
     } else if (weaponName === 'smg') {
       const body = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.07, 0.22), gunDark);
-      body.position.set(0.2, -0.05, -0.76);
+      body.position.set(0.22, -0.07, -0.94);
       this.weaponArms.add(body);
       const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.25, 8), gunMetal);
       barrel.rotation.x = Math.PI / 2;
-      barrel.position.set(0.2, -0.035, -0.94);
+      barrel.position.set(0.22, -0.055, -1.12);
       this.weaponArms.add(barrel);
       const mag = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.12, 0.04), gunMetal);
-      mag.position.set(0.2, -0.15, -0.74);
+      mag.position.set(0.22, -0.17, -0.92);
       mag.rotation.x = 0.15;
       this.weaponArms.add(mag);
       const stock2 = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.12), gunDark);
-      stock2.position.set(0.2, -0.06, -0.62);
+      stock2.position.set(0.22, -0.08, -0.8);
       this.weaponArms.add(stock2);
     } else if (weaponName === 'rifle') {
       const stock3 = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.07, 0.2), woodMat);
-      stock3.position.set(0.2, -0.08, -0.56);
+      stock3.position.set(0.22, -0.1, -0.76);
       this.weaponArms.add(stock3);
       const body = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.08, 0.28), gunDark);
-      body.position.set(0.2, -0.05, -0.74);
+      body.position.set(0.22, -0.07, -0.92);
       this.weaponArms.add(body);
       const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.02, 0.5, 8), gunMetal);
       barrel.rotation.x = Math.PI / 2;
-      barrel.position.set(0.2, -0.035, -1.0);
+      barrel.position.set(0.22, -0.055, -1.18);
       this.weaponArms.add(barrel);
       const scope = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.12, 8), gunMetal);
       scope.rotation.x = Math.PI / 2;
-      scope.position.set(0.2, 0.0, -0.78);
+      scope.position.set(0.22, -0.02, -0.96);
       this.weaponArms.add(scope);
       const scopeLens = new THREE.Mesh(new THREE.CircleGeometry(0.018, 8), new THREE.MeshBasicMaterial({ color: 0x4488ff, transparent: true, opacity: 0.6 }));
-      scopeLens.position.set(0.2, 0.0, -0.84);
+      scopeLens.position.set(0.22, -0.02, -1.02);
       this.weaponArms.add(scopeLens);
       const mag2 = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.1, 0.05), gunMetal);
-      mag2.position.set(0.2, -0.14, -0.7);
+      mag2.position.set(0.22, -0.16, -0.88);
       this.weaponArms.add(mag2);
     } else if (weaponName === 'katana') {
       const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, 0.2, 8), new THREE.MeshLambertMaterial({ color: 0x2a1a0a }));
-      handle.position.set(0.2, -0.1, -0.72);
+      handle.position.set(0.22, -0.12, -0.9);
       handle.rotation.x = 0.3;
       this.weaponArms.add(handle);
       const guard = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.025, 0.04), gunMetal);
-      guard.position.set(0.2, -0.06, -0.82);
+      guard.position.set(0.22, -0.08, -1.0);
       this.weaponArms.add(guard);
       const blade = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.06, 0.55), new THREE.MeshLambertMaterial({ color: 0xcccccc }));
-      blade.position.set(0.2, -0.01, -1.12);
+      blade.position.set(0.22, -0.03, -1.3);
       blade.rotation.x = -0.1;
       this.weaponArms.add(blade);
       const edge = new THREE.Mesh(new THREE.BoxGeometry(0.005, 0.065, 0.55), new THREE.MeshBasicMaterial({ color: 0xffffff }));
@@ -603,7 +601,9 @@ export default class Game {
       this.vehicleDataMap.set(vehicle.id, vehicle);
       const existing = this.vehicles3D.get(vehicle.id);
       if (existing) {
-        this.vehicleTargetPos.set(vehicle.id, { x: vehicle.x, y: vehicle.y, z: vehicle.z, rot: vehicle.rotation });
+        if (vehicle.driver !== this.socket?.id) {
+          this.vehicleTargetPos.set(vehicle.id, { x: vehicle.x, y: vehicle.y, z: vehicle.z, rot: vehicle.rotation });
+        }
       } else {
         this.createVehicle3D(vehicle);
         this.vehicleTargetPos.set(vehicle.id, { x: vehicle.x, y: vehicle.y, z: vehicle.z, rot: vehicle.rotation });
@@ -612,15 +612,12 @@ export default class Game {
 
     this.socket.on('vehicles_batch', (vehicles: VehicleData[]) => {
       for (const vehicle of vehicles) {
-        if (vehicle.driver !== this.socket?.id) {
-          const corrected = this.checkHouseCollision(vehicle.x, vehicle.z, 1.5);
-          vehicle.x = corrected.x;
-          vehicle.z = corrected.z;
-        }
         this.vehicleDataMap.set(vehicle.id, vehicle);
         const existing = this.vehicles3D.get(vehicle.id);
         if (existing) {
-          this.vehicleTargetPos.set(vehicle.id, { x: vehicle.x, y: vehicle.y, z: vehicle.z, rot: vehicle.rotation });
+          if (vehicle.driver !== this.socket?.id) {
+            this.vehicleTargetPos.set(vehicle.id, { x: vehicle.x, y: vehicle.y, z: vehicle.z, rot: vehicle.rotation });
+          }
         } else {
           this.createVehicle3D(vehicle);
           this.vehicleTargetPos.set(vehicle.id, { x: vehicle.x, y: vehicle.y, z: vehicle.z, rot: vehicle.rotation });
@@ -1116,6 +1113,7 @@ export default class Game {
   private updateVehicleLerp(delta: number) {
     const lerpFactor = Math.min(1, delta * 10);
     for (const [id, target] of this.vehicleTargetPos) {
+      if (this.currentVehicle && id === this.currentVehicle.id) continue;
       const mesh = this.vehicles3D.get(id);
       if (!mesh) continue;
       mesh.position.x += (target.x - mesh.position.x) * lerpFactor;

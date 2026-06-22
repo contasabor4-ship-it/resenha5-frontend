@@ -22,7 +22,7 @@ const HNSCanvas = forwardRef<any, HNSCanvasProps>(({ code, onStateChange }, ref)
   }));
 
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (!containerRef.current || !code) return;
     const game = new HNSGame(containerRef.current, (state, data) => {
       callbackRef.current?.(state, data);
     });
@@ -33,6 +33,7 @@ const HNSCanvas = forwardRef<any, HNSCanvasProps>(({ code, onStateChange }, ref)
 
     return () => {
       game.destroy();
+      gameRef.current = null;
     };
   }, [code]);
 
