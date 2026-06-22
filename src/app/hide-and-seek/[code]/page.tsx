@@ -27,10 +27,13 @@ export default function HideAndSeekRoom() {
   useEffect(() => {
     if (roomState !== 'lobby' || !gameRef.current) return;
     const interval = setInterval(() => {
-      const hostId = gameRef.current?.getHostId?.() || '';
-      const playerId = gameRef.current?.getPlayerId?.() || '';
-      if (hostId && playerId) {
-        setIsHost(hostId === playerId);
+      const hbn = gameRef.current?.isHostByName?.();
+      if (typeof hbn === 'boolean') {
+        setIsHost(hbn);
+      } else {
+        const hostId = gameRef.current?.getHostId?.() || '';
+        const playerId = gameRef.current?.getPlayerId?.() || '';
+        if (hostId && playerId) setIsHost(hostId === playerId);
       }
     }, 500);
     return () => clearInterval(interval);
@@ -43,7 +46,14 @@ export default function HideAndSeekRoom() {
     if (data?.prep !== undefined) setGameData(data);
     if (data?.round !== undefined) setGameData(data);
     if (data?.hostId && data?.playerId) {
-      setIsHost(data.hostId === data.playerId);
+      if (data.hostId === data.playerId) {
+        setIsHost(true);
+      } else {
+        const nickname = localStorage.getItem('nickname') || 'Player';
+        if (data.hostNickname && data.hostNickname === nickname) {
+          setIsHost(true);
+        }
+      }
     }
     if (data?.error) {
       setErrorMsg(data.error);

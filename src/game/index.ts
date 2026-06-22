@@ -94,6 +94,7 @@ export default class Game {
   private deathCamAngle = 0;
   private shopItems: { id: string; name: string; price: number; category: string }[] = [];
   private shopOpen = false;
+  private frameCount = 0;
 
   constructor(container: HTMLElement, onStateChange?: (state: GameState) => void) {
     this.container = container;
@@ -106,16 +107,15 @@ export default class Game {
   private init() {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x7ec8e3);
-    this.scene.fog = new THREE.Fog(0x7ec8e3, 200, 600);
+    this.scene.fog = new THREE.Fog(0x7ec8e3, 150, 400);
 
     this.camera = new THREE.PerspectiveCamera(75, this.container.clientWidth / this.container.clientHeight, 0.1, 2000);
     this.camera.position.set(0, this.cameraHeight, 5);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.isMobileDevice() ? 1.5 : 2));
+    this.renderer.shadowMap.enabled = false;
     this.container.appendChild(this.renderer.domElement);
 
     const ambient = new THREE.AmbientLight(0x404040, 0.5);
@@ -126,15 +126,7 @@ export default class Game {
 
     const dir = new THREE.DirectionalLight(0xfff5e6, 1.0);
     dir.position.set(50, 80, 30);
-    dir.castShadow = true;
-    dir.shadow.mapSize.set(1024, 1024);
-    dir.shadow.camera.near = 0.5;
-    dir.shadow.camera.far = 500;
-    dir.shadow.camera.left = -400;
-    dir.shadow.camera.right = 400;
-    dir.shadow.camera.top = 400;
-    dir.shadow.camera.bottom = -400;
-    dir.shadow.bias = -0.001;
+    dir.castShadow = false;
     this.scene.add(dir);
 
     this.createWeaponArms();
@@ -665,140 +657,58 @@ export default class Game {
     const group = new THREE.Group();
     const color = new THREE.Color(p.color);
     const skinColor = new THREE.Color(0xdeb887);
-    const pantsColor = new THREE.Color(0x333355);
-    const shoeColor = new THREE.Color(0x222222);
-    const hairColor = new THREE.Color(0x2a1a0a);
     const darkColor = color.clone().multiplyScalar(0.7);
 
     const torso = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.55, 0.3), new THREE.MeshLambertMaterial({ color }));
-    torso.position.y = 1.2;
-    torso.castShadow = true;
-    group.add(torso);
-
-    const collar = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.06, 0.2), new THREE.MeshLambertMaterial({ color: darkColor }));
-    collar.position.set(0, 1.48, -0.08);
-    group.add(collar);
-
-    const shoulders = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.08, 0.28), new THREE.MeshLambertMaterial({ color }));
-    shoulders.position.y = 1.48;
-    group.add(shoulders);
-
-    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 0.1, 8), new THREE.MeshLambertMaterial({ color: skinColor }));
-    neck.position.y = 1.58;
-    group.add(neck);
+    torso.position.y = 1.2; group.add(torso);
 
     const head = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.28, 0.28), new THREE.MeshLambertMaterial({ color: skinColor }));
-    head.position.y = 1.8;
-    head.castShadow = true;
-    group.add(head);
+    head.position.y = 1.8; group.add(head);
 
-    const hair = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.12, 0.3), new THREE.MeshLambertMaterial({ color: hairColor }));
-    hair.position.set(0, 1.97, -0.01);
-    group.add(hair);
+    const hair = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.12, 0.3), new THREE.MeshLambertMaterial({ color: 0x2a1a0a }));
+    hair.position.set(0, 1.97, -0.01); group.add(hair);
 
-    const hairBack = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.18, 0.08), new THREE.MeshLambertMaterial({ color: hairColor }));
-    hairBack.position.set(0, 1.89, 0.15);
-    group.add(hairBack);
-
-    const eyeWhite = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const eyeW = new THREE.MeshBasicMaterial({ color: 0xffffff });
     const pupil = new THREE.MeshBasicMaterial({ color: 0x111111 });
     for (const side of [-1, 1]) {
-      const eyeW = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.03, 0.02), eyeWhite);
-      eyeW.position.set(side * 0.06, 1.83, -0.14);
-      group.add(eyeW);
-      const pup = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.025, 0.02), pupil);
-      pup.position.set(side * 0.06, 1.83, -0.155);
-      group.add(pup);
-    }
-
-    const eyebrow = new THREE.MeshBasicMaterial({ color: 0x1a1a1a });
-    for (const side of [-1, 1]) {
-      const brow = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.012, 0.02), eyebrow);
-      brow.position.set(side * 0.06, 1.87, -0.145);
-      group.add(brow);
-    }
-
-    const nose = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.04, 0.04), new THREE.MeshLambertMaterial({ color: skinColor.clone().multiplyScalar(0.9) }));
-    nose.position.set(0, 1.79, -0.15);
-    group.add(nose);
-
-    const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.015, 0.02), new THREE.MeshBasicMaterial({ color: 0x8b4513 }));
-    mouth.position.set(0, 1.73, -0.14);
-    group.add(mouth);
-
-    for (const side of [-1, 1]) {
-      const ear = new THREE.Mesh(new THREE.SphereGeometry(0.03, 6, 6), new THREE.MeshLambertMaterial({ color: skinColor }));
-      ear.position.set(side * 0.16, 1.8, 0);
-      group.add(ear);
+      const e = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.03, 0.02), eyeW);
+      e.position.set(side * 0.06, 1.83, -0.14); group.add(e);
+      const p2 = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.025, 0.02), pupil);
+      p2.position.set(side * 0.06, 1.83, -0.155); group.add(p2);
     }
 
     for (const side of [-1, 1]) {
-      const upperArm = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.055, 0.3, 8), new THREE.MeshLambertMaterial({ color }));
-      upperArm.position.set(side * 0.34, 1.25, 0);
-      group.add(upperArm);
-      const forearm = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.28, 8), new THREE.MeshLambertMaterial({ color: skinColor }));
-      forearm.position.set(side * 0.34, 0.78, 0);
-      group.add(forearm);
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.55, 0.1), new THREE.MeshLambertMaterial({ color }));
+      arm.position.set(side * 0.34, 1.15, 0); group.add(arm);
       const hand = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.08), new THREE.MeshLambertMaterial({ color: skinColor }));
-      hand.position.set(side * 0.34, 0.6, -0.02);
-      group.add(hand);
+      hand.position.set(side * 0.34, 0.85, -0.02); group.add(hand);
     }
 
     for (const side of [-1, 1]) {
-      const upperLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.065, 0.35, 8), new THREE.MeshLambertMaterial({ color: pantsColor }));
-      upperLeg.position.set(side * 0.11, 0.58, 0);
-      group.add(upperLeg);
-      const lowerLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.055, 0.35, 8), new THREE.MeshLambertMaterial({ color: pantsColor }));
-      lowerLeg.position.set(side * 0.11, 0.25, 0);
-      group.add(lowerLeg);
-      const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.07, 0.2), new THREE.MeshLambertMaterial({ color: shoeColor }));
-      shoe.position.set(side * 0.11, 0.035, -0.03);
-      group.add(shoe);
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.7, 0.14), new THREE.MeshLambertMaterial({ color: 0x333355 }));
+      leg.position.set(side * 0.11, 0.4, 0); group.add(leg);
     }
 
     const belt = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.05, 0.32), new THREE.MeshLambertMaterial({ color: 0x222222 }));
-    belt.position.y = 0.92;
-    group.add(belt);
-    const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.04, 0.03), new THREE.MeshLambertMaterial({ color: 0xcccccc }));
-    buckle.position.set(0, 0.92, -0.17);
-    group.add(buckle);
-
-    const pocketL = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.08, 0.02), new THREE.MeshLambertMaterial({ color: darkColor }));
-    pocketL.position.set(-0.14, 1.0, -0.16);
-    group.add(pocketL);
-    const pocketR = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.08, 0.02), new THREE.MeshLambertMaterial({ color: darkColor }));
-    pocketR.position.set(0.14, 1.0, -0.16);
-    group.add(pocketR);
+    belt.position.y = 0.92; group.add(belt);
 
     const hpRatio = p.health / 100;
     const hpBarBg = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.08), new THREE.MeshBasicMaterial({ color: 0x333333, side: THREE.DoubleSide }));
-    hpBarBg.position.set(0, 2.2, 0);
-    hpBarBg.lookAt(new THREE.Vector3(0, 2.2, -10));
-    group.add(hpBarBg);
+    hpBarBg.position.set(0, 2.2, 0); hpBarBg.lookAt(new THREE.Vector3(0, 2.2, -10)); group.add(hpBarBg);
     const hpBar = new THREE.Mesh(new THREE.PlaneGeometry(0.78 * hpRatio, 0.06), new THREE.MeshBasicMaterial({
-      color: hpRatio > 0.5 ? 0x4CAF50 : hpRatio > 0.25 ? 0xFF9800 : 0xf44336,
-      side: THREE.DoubleSide
+      color: hpRatio > 0.5 ? 0x4CAF50 : hpRatio > 0.25 ? 0xFF9800 : 0xf44336, side: THREE.DoubleSide
     }));
-    hpBar.position.set(-(0.78 * (1 - hpRatio)) / 2, 2.2, 0.001);
-    hpBar.lookAt(new THREE.Vector3(0, 2.2, -10));
-    group.add(hpBar);
+    hpBar.position.set(-(0.78 * (1 - hpRatio)) / 2, 2.2, 0.001); hpBar.lookAt(new THREE.Vector3(0, 2.2, -10)); group.add(hpBar);
 
     const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 64;
+    canvas.width = 256; canvas.height = 64;
     const ctx = canvas.getContext('2d')!;
-    ctx.fillStyle = 'rgba(0,0,0,0.6)';
-    ctx.fillRect(0, 0, 256, 64);
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 28px Arial';
-    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(0, 0, 256, 64);
+    ctx.fillStyle = '#ffffff'; ctx.font = 'bold 28px Arial'; ctx.textAlign = 'center';
     ctx.fillText(p.nickname, 128, 42);
     const texture = new THREE.CanvasTexture(canvas);
-    const labelMat = new THREE.SpriteMaterial({ map: texture, transparent: true });
-    const label = new THREE.Sprite(labelMat);
-    label.position.set(0, 2.5, 0);
-    label.scale.set(2, 0.5, 1);
-    group.add(label);
+    const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true }));
+    label.position.set(0, 2.5, 0); label.scale.set(2, 0.5, 1); group.add(label);
 
     return group;
   }
@@ -808,17 +718,15 @@ export default class Game {
     const speedFactor = isMoving ? Math.min(speed / 10, 1.5) : 0.3;
     const freq = isMoving ? 8 + speedFactor * 4 : 2;
     const swing = Math.sin(time * freq) * speedFactor * 0.25;
-    const armSwing = Math.sin(time * freq + Math.PI) * speedFactor * 0.15;
 
-    const legL = group.children.find(c => c.position.x < -0.1 && c.position.y < 0.6 && c.type === 'Mesh');
-    const legR = group.children.find(c => c.position.x > 0.1 && c.position.y < 0.6 && c.type === 'Mesh');
-    const armL = group.children.find(c => c.position.x < -0.3 && c.position.y > 1.0 && c.type === 'Mesh');
-    const armR = group.children.find(c => c.position.x > 0.3 && c.position.y > 1.0 && c.type === 'Mesh');
-
-    if (legL) legL.rotation.x = swing;
-    if (legR) legR.rotation.x = -swing;
-    if (armL) armL.rotation.x = -armSwing;
-    if (armR) armR.rotation.x = armSwing;
+    const children = group.children;
+    for (let i = 0; i < children.length; i++) {
+      const c = children[i];
+      if (c.position.y < 0.5 && c.position.y > 0.1) {
+        if (c.position.x < -0.05) c.rotation.x = swing;
+        else if (c.position.x > 0.05) c.rotation.x = -swing;
+      }
+    }
 
     if (isMoving) {
       group.position.y = Math.abs(Math.sin(time * freq * 2)) * 0.03;
@@ -1188,29 +1096,26 @@ export default class Game {
     this.updateHUD();
   }
 
-  private updateHUD() {
-    const existing = document.getElementById('gta-hud');
-    if (existing) existing.remove();
-    if (!this.playerData) return;
+  private hudEl: HTMLElement | null = null;
+  private hudHp!: HTMLElement;
+  private hudArmor!: HTMLElement;
+  private hudWeapon!: HTMLElement;
+  private hudAmmo!: HTMLElement;
+  private hudMoney!: HTMLElement;
+  private hudKd!: HTMLElement;
 
-    const weaponKeys = Object.keys(this.weapons);
-    const weaponSlots = weaponKeys.map((k, i) => {
-      const active = k === this.playerData!.weapon;
-      return `<span style="color:${active ? '#fff' : '#666'};${active ? 'text-decoration:underline;' : ''}">${i + 1}:${k.toUpperCase()}</span>`;
-    }).join(' | ');
-
+  private createHUD() {
+    if (this.hudEl) return;
     const hud = document.createElement('div');
     hud.id = 'gta-hud';
     hud.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;pointer-events:none;z-index:10;font-family:Arial,sans-serif;';
     hud.innerHTML = `
-      <div style="position:absolute;top:20px;left:20px;color:#fff;text-shadow:2px 2px 4px #000;font-size:24px;font-weight:bold;">
-        ${this.playerData.nickname} - Resenha 5
-      </div>
+      <div id="hud-name" style="position:absolute;top:20px;left:20px;color:#fff;text-shadow:2px 2px 4px #000;font-size:24px;font-weight:bold;"></div>
       <div style="position:absolute;bottom:20px;left:20px;color:#fff;text-shadow:2px 2px 4px #000;font-size:16px;background:rgba(0,0,0,0.5);padding:12px;border-radius:8px;">
-        <div style="margin-bottom:6px;"><span style="color:${this.playerData.health > 50 ? '#4CAF50' : this.playerData.health > 25 ? '#FF9800' : '#f44336'};font-size:20px;font-weight:bold;">HP: ${Math.round(this.playerData.health)}</span> <span style="color:#4FC3F7;">Armor: ${Math.round(this.playerData.armor)}</span></div>
-        <div style="margin-bottom:6px;font-size:18px;">Weapon: <span style="color:#FFD700;font-weight:bold;">${this.playerData.weapon.toUpperCase()}</span> | Ammo: <span style="color:#FFD700;">${this.playerData.ammo}</span></div>
-        <div style="margin-bottom:6px;"><span style="color:#4CAF50;font-weight:bold;">$${this.playerData.money.toLocaleString()}</span> | K/D: ${this.playerData.kills}/${this.playerData.deaths}</div>
-        <div style="font-size:12px;color:#aaa;">${weaponSlots}</div>
+        <div style="margin-bottom:6px;"><span id="hud-hp" style="font-size:20px;font-weight:bold;"></span> <span id="hud-armor" style="color:#4FC3F7;"></span></div>
+        <div style="margin-bottom:6px;font-size:18px;">Weapon: <span id="hud-weapon" style="color:#FFD700;font-weight:bold;"></span> | Ammo: <span id="hud-ammo" style="color:#FFD700;"></span></div>
+        <div style="margin-bottom:6px;"><span id="hud-money" style="color:#4CAF50;font-weight:bold;"></span> | K/D: <span id="hud-kd"></span></div>
+        <div id="hud-slots" style="font-size:12px;color:#aaa;"></div>
       </div>
       <div style="position:absolute;bottom:20px;right:20px;color:#fff;text-shadow:2px 2px 4px #000;font-size:14px;text-align:right;background:rgba(0,0,0,0.5);padding:12px;border-radius:8px;">
         <div>WASD - Mover</div>
@@ -1219,23 +1124,62 @@ export default class Game {
         <div>E - Veiculo</div>
         <div>F - Sair do veiculo</div>
         <div>Tab - Loja</div>
-        <div>1-4 - Trocar arma</div>
+        <div>1-5 - Trocar arma</div>
         <div>R - Renascer</div>
       </div>
     `;
     document.body.appendChild(hud);
+    this.hudEl = hud;
+    this.hudHp = document.getElementById('hud-hp')!;
+    this.hudArmor = document.getElementById('hud-armor')!;
+    this.hudWeapon = document.getElementById('hud-weapon')!;
+    this.hudAmmo = document.getElementById('hud-ammo')!;
+    this.hudMoney = document.getElementById('hud-money')!;
+    this.hudKd = document.getElementById('hud-kd')!;
+    document.getElementById('hud-name')!.textContent = this.playerData!.nickname + ' - Resenha 5';
+    const slots = document.getElementById('hud-slots')!;
+    const weaponKeys = Object.keys(this.weapons);
+    slots.innerHTML = weaponKeys.map((k, i) => `<span id="hud-slot-${i}" style="color:#666;">${i + 1}:${k.toUpperCase()}</span>`).join(' | ');
   }
 
+  private updateHUD() {
+    if (!this.playerData) return;
+    this.createHUD();
+    const p = this.playerData;
+    const hpColor = p.health > 50 ? '#4CAF50' : p.health > 25 ? '#FF9800' : '#f44336';
+    this.hudHp.style.color = hpColor;
+    this.hudHp.textContent = 'HP: ' + Math.round(p.health);
+    this.hudArmor.textContent = 'Armor: ' + Math.round(p.armor);
+    this.hudWeapon.textContent = p.weapon.toUpperCase();
+    this.hudAmmo.textContent = String(p.ammo);
+    this.hudMoney.textContent = '$' + p.money.toLocaleString();
+    this.hudKd.textContent = p.kills + '/' + p.deaths;
+    const weaponKeys = Object.keys(this.weapons);
+    weaponKeys.forEach((k, i) => {
+      const el = document.getElementById('hud-slot-' + i);
+      if (el) {
+        const active = k === p.weapon;
+        el.style.color = active ? '#fff' : '#666';
+        el.style.textDecoration = active ? 'underline' : 'none';
+      }
+    });
+  }
+
+  private killfeedEl: HTMLElement | null = null;
+  private killfeedContent: HTMLElement | null = null;
+
   private updateKillfeed(killfeed: any[]) {
-    const existing = document.getElementById('killfeed');
-    if (existing) existing.remove();
-    const div = document.createElement('div');
-    div.id = 'killfeed';
-    div.style.cssText = 'position:fixed;top:80px;right:20px;color:#fff;text-shadow:2px 2px 4px #000;font-size:14px;font-family:Arial;z-index:10;';
-    div.innerHTML = killfeed.slice(0, 5).map(k =>
+    if (!this.killfeedEl) {
+      this.killfeedEl = document.createElement('div');
+      this.killfeedEl.id = 'killfeed';
+      this.killfeedEl.style.cssText = 'position:fixed;top:80px;right:20px;color:#fff;text-shadow:2px 2px 4px #000;font-size:14px;font-family:Arial;z-index:10;';
+      this.killfeedContent = document.createElement('div');
+      this.killfeedEl.appendChild(this.killfeedContent);
+      document.body.appendChild(this.killfeedEl);
+    }
+    this.killfeedContent!.innerHTML = killfeed.slice(0, 5).map(k =>
       `<div style="margin-bottom:4px;background:rgba(0,0,0,0.5);padding:4px 8px;border-radius:4px;">${k.killer} [${k.weapon}] ${k.victim}</div>`
     ).join('');
-    document.body.appendChild(div);
   }
 
   private animate = () => {
@@ -1256,7 +1200,7 @@ export default class Game {
     }
 
     this.updateVehicleLerp(delta);
-    this.updatePlayerHealthBars();
+    if (this.frameCount++ % 5 === 0) this.updatePlayerHealthBars();
     this.renderer.render(this.scene, this.camera);
   };
 
@@ -1593,10 +1537,8 @@ export default class Game {
     this.socket?.disconnect();
     this.renderer.dispose();
     this.container.removeChild(this.renderer.domElement);
-    const hud = document.getElementById('gta-hud');
-    if (hud) hud.remove();
-    const killfeed = document.getElementById('killfeed');
-    if (killfeed) killfeed.remove();
+    if (this.hudEl) this.hudEl.remove();
+    if (this.killfeedEl) this.killfeedEl.remove();
     const eHint = document.getElementById('e-hint');
     if (eHint) eHint.remove();
     if (this.wastedOverlay) this.wastedOverlay.remove();

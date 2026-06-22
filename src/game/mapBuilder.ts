@@ -87,7 +87,7 @@ function createRoads(scene: THREE.Scene) {
   addSW(16.5, 0, 3, WORLD_SIZE);
   addEdge(-14.8, 0, false, WORLD_SIZE);
   addEdge(14.8, 0, false, WORLD_SIZE);
-  for (let z = -400; z < 400; z += 10) addDash(0, z, false);
+  for (let z = -400; z < 400; z += 30) addDash(0, z, false);
 
   for (const cz of CROSS_ROADS) {
     addRoad(0, cz, WORLD_SIZE, 12);
@@ -95,21 +95,13 @@ function createRoads(scene: THREE.Scene) {
     addSW(0, cz + 7.5, WORLD_SIZE, 3);
     addEdge(0, cz - 5.8, true, WORLD_SIZE);
     addEdge(0, cz + 5.8, true, WORLD_SIZE);
-    for (let x = -400; x < 400; x += 10) addDash(x, cz, true);
+    for (let x = -400; x < 400; x += 30) addDash(x, cz, true);
   }
 
   for (const sx of [-18, 18]) {
-    for (let z = -400; z < 400; z += 6) {
-      if (Math.abs(z) < 8) continue;
-      let blocked = false;
-      for (const cz of CROSS_ROADS) {
-        if (Math.abs(z - cz) < 8) { blocked = true; break; }
-      }
-      if (blocked) continue;
-      const curb = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.06, 2), curbMat);
-      curb.position.set(sx + (sx < 0 ? -1.5 : 1.5), 0.18, z);
-      scene.add(curb);
-    }
+    const curb = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.06, WORLD_SIZE), curbMat);
+    curb.position.set(sx + (sx < 0 ? -1.5 : 1.5), 0.18, 0);
+    scene.add(curb);
   }
 }
 
@@ -308,15 +300,6 @@ function createHouse(scene: THREE.Scene, house: HouseInfo, data: MapData) {
           glass.position.set(x + wx, fy, z + wz);
           glass.rotation.y = wrY;
           group.add(glass);
-
-          const crossH = new THREE.Mesh(new THREE.BoxGeometry(windowW, 0.03, 0.06), windowFrameMat);
-          crossH.position.set(x + wx, fy, z + wz);
-          crossH.rotation.y = wrY;
-          group.add(crossH);
-          const crossV = new THREE.Mesh(new THREE.BoxGeometry(0.03, windowH, 0.06), windowFrameMat);
-          crossV.position.set(x + wx, fy, z + wz);
-          crossV.rotation.y = wrY;
-          group.add(crossV);
         }
       }
     }
@@ -408,19 +391,13 @@ function createEnvironment(scene: THREE.Scene, houseBounds: MapData['houseBounds
 
   for (const [tx, tz, ts] of treePositions) {
     const g = new THREE.Group();
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.15 * ts, 0.25 * ts, 2.5 * ts, 8), trunkMat);
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.15 * ts, 0.25 * ts, 2.5 * ts, 6), trunkMat);
     trunk.position.y = 1.25 * ts;
-    trunk.castShadow = true;
     g.add(trunk);
     const leafMat = leafMats[Math.floor(rand() * leafMats.length)];
-    for (let i = 0; i < 3; i++) {
-      const radius = (1.8 - i * 0.4) * ts;
-      const height = (1.5 - i * 0.2) * ts;
-      const leaves = new THREE.Mesh(new THREE.ConeGeometry(radius, height, 8), leafMat);
-      leaves.position.y = (3.0 + i * 1.0) * ts;
-      leaves.castShadow = true;
-      g.add(leaves);
-    }
+    const leaves = new THREE.Mesh(new THREE.ConeGeometry(1.8 * ts, 3.5 * ts, 6), leafMat);
+    leaves.position.y = 4.0 * ts;
+    g.add(leaves);
     g.position.set(tx, 0, tz);
     scene.add(g);
   }
@@ -455,12 +432,9 @@ function createEnvironment(scene: THREE.Scene, houseBounds: MapData['houseBounds
     const arm = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 1.2), poleMat);
     arm.position.set(0, 5.8, 0.6);
     g.add(arm);
-    const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 8), lightMat);
+    const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.2, 6, 6), lightMat);
     lamp.position.set(0, 5.7, 1.2);
     g.add(lamp);
-    const pl = new THREE.PointLight(0xffffcc, 0.5, 20);
-    pl.position.set(0, 5.5, 1.2);
-    g.add(pl);
     g.position.set(lx, 0, lz);
     scene.add(g);
   }

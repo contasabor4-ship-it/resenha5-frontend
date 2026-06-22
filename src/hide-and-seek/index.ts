@@ -54,6 +54,7 @@ export default class HNSGame {
   private currentPhase: string = 'lobby';
   private groundPlane!: THREE.Mesh;
   private hostId: string = '';
+  private hostNickname: string = '';
 
   constructor(container: HTMLElement, onStateChange?: (state: GameState, data?: any) => void) {
     this.container = container;
@@ -137,10 +138,11 @@ export default class HNSGame {
     this.socket.on('room_joined', (data: any) => {
       this.playerId = data.playerId;
       this.hostId = data.room.host;
+      this.hostNickname = data.room.hostNickname || '';
       this.players = data.room.players;
       this.map = data.room.map;
       this.state = 'lobby';
-      this.onStateChange?.('lobby', { players: this.players, code: this.code, hostId: this.hostId, playerId: this.playerId });
+      this.onStateChange?.('lobby', { players: this.players, code: this.code, hostId: this.hostId, playerId: this.playerId, hostNickname: this.hostNickname });
       this.buildMap();
       this.updatePlayers3D();
     });
@@ -218,11 +220,16 @@ export default class HNSGame {
   }
 
   startGame() {
-    this.socket?.emit('start_game', { code: this.code });
+    const nickname = localStorage.getItem('nickname') || 'Player';
+    this.socket?.emit('start_game', { code: this.code, nickname });
   }
 
   getHostId() { return this.hostId; }
   getPlayerId() { return this.playerId; }
+  isHostByName() {
+    const nickname = localStorage.getItem('nickname') || 'Player';
+    return this.hostId === this.playerId || this.hostNickname === nickname;
+  }
 
   leaveRoom() {
     this.socket?.emit('leave_room', { code: this.code });

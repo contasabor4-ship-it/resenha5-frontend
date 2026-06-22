@@ -19,6 +19,7 @@ const HNSCanvas = forwardRef<any, HNSCanvasProps>(({ code, onStateChange }, ref)
     leaveRoom: () => gameRef.current?.leaveRoom(),
     getHostId: () => gameRef.current?.getHostId() || '',
     getPlayerId: () => gameRef.current?.getPlayerId() || '',
+    isHostByName: () => gameRef.current?.isHostByName() || false,
   }));
 
   useEffect(() => {
