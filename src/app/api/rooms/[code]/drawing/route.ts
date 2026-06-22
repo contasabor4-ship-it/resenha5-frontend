@@ -16,16 +16,34 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
       return NextResponse.json({ error: 'Sala não encontrada' }, { status: 404 });
     }
 
-    const { error } = await supabaseAdmin.from('drawings').insert({
-      room_code: code,
-      round_number: room.current_round,
-      phrase_id: phraseId,
-      drawer_id: playerId,
-      image_url: imageData,
-    });
+    const { data: existing } = await supabaseAdmin
+      .from('drawings')
+      .select('id')
+      .eq('room_code', code)
+      .eq('round_number', room.current_round)
+      .eq('drawer_id', playerId)
+      .maybeSingle();
 
-    if (error) {
-      return NextResponse.json({ error: 'Erro ao salvar desenho' }, { status: 500 });
+    if (existing) {
+      const { error: uErr } = await supabaseAdmin
+        .from('drawings')
+        .update({ image_url: imageData })
+        .eq('id', existing.id);
+      if (uErr) {
+        return NextResponse.json({ error: 'Erro ao atualizar desenho' }, { status: 500 });
+      }
+    } else {
+      const { error } = await supabaseAdmin.from('drawings').insert({
+        room_code: code,
+        round_number: room.current_round,
+        phrase_id: phraseId,
+        drawer_id: playerId,
+        image_url: imageData,
+      });
+
+      if (error) {
+        return NextResponse.json({ error: 'Erro ao salvar desenho' }, { status: 500 });
+      }
     }
 
     await supabaseAdmin

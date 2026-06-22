@@ -63,6 +63,7 @@ export default class Game {
   private cameraEuler = new THREE.Euler(0, 0, 0, 'YXZ');
   private players3D: Map<string, THREE.Group> = new Map();
   private playerHealthMap: Map<string, number> = new Map();
+  private playerAnimTime: Map<string, number> = new Map();
   private vehicles3D: Map<string, THREE.Group> = new Map();
   private houses3D: Map<string, THREE.Group> = new Map();
   private projectiles3D: Map<string, THREE.Mesh> = new Map();
@@ -77,10 +78,13 @@ export default class Game {
   private currentVehicle: VehicleData | null = null;
   private vehicleRotation = 0;
   private houseBounds: { minX: number; maxX: number; minZ: number; maxZ: number }[] = [];
+  private buildingFloors: { minX: number; maxX: number; minZ: number; maxZ: number; groundY: number; floorH: number; floors: number; stairX: number; stairZ: number; stairDirX: number; stairDirZ: number; stairLen: number }[] = [];
   private weaponArms: THREE.Group | null = null;
   private recoilAmount = 0;
   private vehicleDataMap: Map<string, VehicleData> = new Map();
   private currentWeaponModel = '';
+  private muzzleFlash: THREE.Mesh | null = null;
+  private muzzleFlashTimer = 0;
   private wastedOverlay: HTMLElement | null = null;
   private wastedText: HTMLElement | null = null;
   private wastedFadeTimer = 0;
@@ -88,6 +92,7 @@ export default class Game {
   private deathCamAngle = 0;
   private shopItems: { id: string; name: string; price: number; category: string }[] = [];
   private shopOpen = false;
+  private terrainMesh: THREE.Mesh | null = null;
 
   constructor(container: HTMLElement, onStateChange?: (state: GameState) => void) {
     this.container = container;
@@ -100,9 +105,9 @@ export default class Game {
   private init() {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x87CEEB);
-    this.scene.fog = new THREE.Fog(0x87CEEB, 50, this.worldSize * 0.7);
+    this.scene.fog = new THREE.Fog(0x87CEEB, 350, 1500);
 
-    this.camera = new THREE.PerspectiveCamera(75, this.container.clientWidth / this.container.clientHeight, 0.1, 500);
+    this.camera = new THREE.PerspectiveCamera(75, this.container.clientWidth / this.container.clientHeight, 0.1, 2000);
     this.camera.position.set(0, this.cameraHeight, 5);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -120,10 +125,10 @@ export default class Game {
     dir.shadow.mapSize.set(2048, 2048);
     dir.shadow.camera.near = 0.5;
     dir.shadow.camera.far = 400;
-    dir.shadow.camera.left = -200;
-    dir.shadow.camera.right = 200;
-    dir.shadow.camera.top = 200;
-    dir.shadow.camera.bottom = -200;
+    dir.shadow.camera.left = -400;
+    dir.shadow.camera.right = 400;
+    dir.shadow.camera.top = 400;
+    dir.shadow.camera.bottom = -400;
     this.scene.add(dir);
 
     this.createWeaponArms();
@@ -133,42 +138,47 @@ export default class Game {
 
   private createWeaponArms() {
     this.weaponArms = new THREE.Group();
-    this.weaponArms.position.set(0.35, -0.35, -0.5);
+    this.weaponArms.position.set(0.3, -0.28, -0.4);
     this.camera.add(this.weaponArms);
     this.scene.add(this.camera);
+
+    const flashGeo = new THREE.SphereGeometry(0.08, 6, 6);
+    const flashMat = new THREE.MeshBasicMaterial({ color: 0xffffaa, transparent: true, opacity: 0 });
+    this.muzzleFlash = new THREE.Mesh(flashGeo, flashMat);
+    this.muzzleFlash.position.set(0.2, -0.01, -1.1);
+    this.muzzleFlash.visible = false;
+    this.weaponArms.add(this.muzzleFlash);
+
     this.buildWeaponModel('pistol');
   }
 
   private buildWeaponModel(weaponName: string) {
     if (!this.weaponArms) return;
-    while (this.weaponArms.children.length > 0) {
-      const c = this.weaponArms.children[0];
+    for (let i = this.weaponArms.children.length - 1; i >= 0; i--) {
+      const c = this.weaponArms.children[i];
+      if (c === this.muzzleFlash) continue;
       this.weaponArms.remove(c);
       if (c instanceof THREE.Mesh) { c.geometry.dispose(); (c.material as THREE.Material).dispose(); }
     }
 
-    const skinMat = new THREE.MeshBasicMaterial({ color: 0xdeb887 });
-    const gunMetal = new THREE.MeshBasicMaterial({ color: 0x2a2a2a });
-    const gunDark = new THREE.MeshBasicMaterial({ color: 0x1a1a1a });
-    const woodMat = new THREE.MeshBasicMaterial({ color: 0x5c3a1e });
+    const skinMat = new THREE.MeshLambertMaterial({ color: 0xdeb887 });
+    const gunMetal = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.6, metalness: 0.7 });
+    const gunDark = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.8, metalness: 0.3 });
+    const woodMat = new THREE.MeshStandardMaterial({ color: 0x5c3a1e, roughness: 0.9 });
 
-    const sleeve = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.12, 0.55), new THREE.MeshLambertMaterial({ color: 0x334455 }));
-    sleeve.position.set(0.2, -0.15, -0.3);
-    sleeve.rotation.x = 0.5;
+    const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.08, 0.5, 8), new THREE.MeshLambertMaterial({ color: 0x334455 }));
+    sleeve.position.set(0.2, -0.1, -0.35);
+    sleeve.rotation.x = 0.2;
     this.weaponArms.add(sleeve);
 
-    const forearm = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.045, 0.4, 8), skinMat);
-    forearm.position.set(0.2, -0.12, -0.58);
-    forearm.rotation.x = 0.1;
+    const forearm = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.04, 0.35, 8), skinMat);
+    forearm.position.set(0.2, -0.08, -0.62);
+    forearm.rotation.x = 0.05;
     this.weaponArms.add(forearm);
 
-    const hand = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.07, 0.1), skinMat);
-    hand.position.set(0.2, -0.1, -0.72);
+    const hand = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.065, 0.12), skinMat);
+    hand.position.set(0.2, -0.06, -0.76);
     this.weaponArms.add(hand);
-
-    const hand2 = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.06, 0.08), skinMat);
-    hand2.position.set(0.2, -0.08, -0.78);
-    this.weaponArms.add(hand2);
 
     if (weaponName === 'pistol') {
       const slide = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.055, 0.28), gunDark);
@@ -275,6 +285,13 @@ export default class Game {
         this.weaponArms.rotation.x = 0;
       }
     }
+    if (this.muzzleFlash && this.muzzleFlash.visible) {
+      this.muzzleFlashTimer -= 0.016;
+      if (this.muzzleFlashTimer <= 0) {
+        this.muzzleFlash.visible = false;
+        (this.muzzleFlash.material as THREE.MeshBasicMaterial).opacity = 0;
+      }
+    }
   }
 
   private connectSocket() {
@@ -315,6 +332,7 @@ export default class Game {
           this.scene.remove(group);
           this.players3D.delete(id);
           this.playerHealthMap.delete(id);
+          this.playerAnimTime.delete(id);
         }
       }
       for (const p of players) {
@@ -325,6 +343,7 @@ export default class Game {
           group = this.createPlayerModel(p);
           this.scene.add(group);
           this.players3D.set(p.id, group);
+          this.playerAnimTime.set(p.id, 0);
         }
         this.playerHealthMap.set(p.id, p.health);
         if (p.inVehicle) {
@@ -336,6 +355,9 @@ export default class Game {
             group.rotation.set(0, p.rotation, 0);
             group.rotation.x = 0;
             group.rotation.z = 0;
+            const at = this.playerAnimTime.get(p.id) || 0;
+            this.playerAnimTime.set(p.id, at + 0.016);
+            this.animatePlayerModel(group, p.speed || 0, at);
           } else {
             group.position.set(p.x, 0.3, p.z);
             group.rotation.x = -Math.PI / 2;
@@ -514,263 +536,129 @@ export default class Game {
     return group;
   }
 
+  private animatePlayerModel(group: THREE.Group, speed: number, time: number) {
+    const isMoving = speed > 0.5;
+    const speedFactor = isMoving ? Math.min(speed / 10, 1.5) : 0.3;
+    const freq = isMoving ? 8 + speedFactor * 4 : 2;
+    const swing = Math.sin(time * freq) * speedFactor * 0.25;
+    const armSwing = Math.sin(time * freq + Math.PI) * speedFactor * 0.15;
+
+    const legL = group.children.find(c => c.position.x < -0.1 && c.position.y < 0.6 && c.type === 'Mesh');
+    const legR = group.children.find(c => c.position.x > 0.1 && c.position.y < 0.6 && c.type === 'Mesh');
+    const armL = group.children.find(c => c.position.x < -0.3 && c.position.y > 1.0 && c.type === 'Mesh');
+    const armR = group.children.find(c => c.position.x > 0.3 && c.position.y > 1.0 && c.type === 'Mesh');
+
+    if (legL) legL.rotation.x = swing;
+    if (legR) legR.rotation.x = -swing;
+    if (armL) armL.rotation.x = -armSwing;
+    if (armR) armR.rotation.x = armSwing;
+
+    if (isMoving) {
+      group.position.y = Math.abs(Math.sin(time * freq * 2)) * 0.03;
+    }
+  }
+
+  private getHeight(_x: number, _z: number): number {
+    return 0;
+  }
+
   private setupWorld(vehicles: VehicleData[], houses: HouseData[]) {
     this.houseBounds = [];
+    this.buildingFloors = [];
     this.vehicleDataMap.clear();
 
+    const geo = new THREE.PlaneGeometry(this.worldSize, this.worldSize);
+    geo.rotateX(-Math.PI / 2);
     const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(this.worldSize, this.worldSize),
-      new THREE.MeshLambertMaterial({ color: 0x3a7d44 })
+      geo,
+      new THREE.MeshLambertMaterial({ color: 0x4a8c3f })
     );
-    ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
     this.scene.add(ground);
+    this.terrainMesh = ground;
 
-    const roadMat = new THREE.MeshLambertMaterial({ color: 0x333333 });
-    const sidewalkMat = new THREE.MeshLambertMaterial({ color: 0x999999 });
-    const lineMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
-
-    const mainH = new THREE.Mesh(new THREE.BoxGeometry(this.worldSize, 0.06, 10), roadMat);
-    mainH.position.set(0, 0.03, 0);
-    this.scene.add(mainH);
-    const mainV = new THREE.Mesh(new THREE.BoxGeometry(10, 0.06, this.worldSize), roadMat);
-    mainV.position.set(0, 0.03, 0);
-    this.scene.add(mainV);
-
-    for (const side of [-5.5, 5.5]) {
-      const swH = new THREE.Mesh(new THREE.BoxGeometry(this.worldSize, 0.08, 1.5), sidewalkMat);
-      swH.position.set(0, 0.04, side);
-      this.scene.add(swH);
-      const swV = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.08, this.worldSize), sidewalkMat);
-      swV.position.set(side, 0.04, 0);
-      this.scene.add(swV);
-    }
-
-    const lineH = new THREE.Mesh(new THREE.BoxGeometry(this.worldSize, 0.07, 0.15), lineMat);
-    lineH.position.set(0, 0.06, 0);
-    this.scene.add(lineH);
-    const lineV = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.07, this.worldSize), lineMat);
-    lineV.position.set(0, 0.06, 0);
-    this.scene.add(lineV);
-
-    const streets = [
-      { x: -90, z: 0, w: 6, d: this.worldSize * 0.7 },
-      { x: 90, z: 0, w: 6, d: this.worldSize * 0.7 },
-      { x: 0, z: -90, w: this.worldSize * 0.7, d: 6 },
-      { x: 0, z: 90, w: this.worldSize * 0.7, d: 6 },
-      { x: -150, z: 0, w: 6, d: this.worldSize * 0.5 },
-      { x: 150, z: 0, w: 6, d: this.worldSize * 0.5 },
-      { x: 0, z: -150, w: this.worldSize * 0.5, d: 6 },
-      { x: 0, z: 150, w: this.worldSize * 0.5, d: 6 },
-    ];
-    for (const s of streets) {
-      const street = new THREE.Mesh(new THREE.BoxGeometry(s.w, 0.05, s.d), roadMat);
-      street.position.set(s.x, 0.03, s.z);
-      this.scene.add(street);
-    }
-
-    const zonePatches = [
-      { x: -120, z: -120, w: 160, d: 160, color: 0x444444 },
-      { x: 130, z: -120, w: 150, d: 150, color: 0x665533 },
-      { x: -120, z: 130, w: 160, d: 150, color: 0xb8945a },
-      { x: 130, z: 130, w: 150, d: 150, color: 0x3a7d44 },
-    ];
-    for (const z of zonePatches) {
-      const pMesh = new THREE.Mesh(new THREE.PlaneGeometry(z.w, z.d), new THREE.MeshLambertMaterial({ color: z.color }));
-      pMesh.rotation.x = -Math.PI / 2;
-      pMesh.position.set(z.x, 0.01, z.z);
-      pMesh.receiveShadow = true;
-      this.scene.add(pMesh);
-    }
-
-    const downtownPavement = new THREE.Mesh(
-      new THREE.PlaneGeometry(160, 160),
-      new THREE.MeshLambertMaterial({ color: 0x666666 })
-    );
-    downtownPavement.rotation.x = -Math.PI / 2;
-    downtownPavement.position.set(-120, 0.02, -120);
-    downtownPavement.receiveShadow = true;
-    this.scene.add(downtownPavement);
-
-    const industrialGround = new THREE.Mesh(
-      new THREE.PlaneGeometry(150, 150),
-      new THREE.MeshLambertMaterial({ color: 0x7a6b44 })
-    );
-    industrialGround.rotation.x = -Math.PI / 2;
-    industrialGround.position.set(130, 0.02, -120);
-    industrialGround.receiveShadow = true;
-    this.scene.add(industrialGround);
-
-    const favelaGround = new THREE.Mesh(
-      new THREE.PlaneGeometry(160, 150),
-      new THREE.MeshLambertMaterial({ color: 0xa08050 })
-    );
-    favelaGround.rotation.x = -Math.PI / 2;
-    favelaGround.position.set(-120, 0.02, 130);
-    favelaGround.receiveShadow = true;
-    this.scene.add(favelaGround);
+    this.createRoads();
+    this.createPlaza();
 
     for (const v of vehicles) {
+      v.y = 0.5;
       this.createVehicle3D(v);
       this.vehicleDataMap.set(v.id, v);
     }
 
+    this.playerData!.y = 0;
+
     for (const h of houses) {
       this.createHouse3D(h);
     }
-
-    this.createDeco();
   }
 
-  private createDeco() {
-    const poleMat = new THREE.MeshLambertMaterial({ color: 0x444444 });
-    const lightMat = new THREE.MeshBasicMaterial({ color: 0xffffcc });
+  private createRoads() {
+    const roadMat = new THREE.MeshLambertMaterial({ color: 0x2a2a2a });
+    const sidewalkMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
+    const dashMat = new THREE.MeshBasicMaterial({ color: 0xdddddd });
 
-    const lightPositions = [
-      { x: 25, z: 0 }, { x: -25, z: 0 }, { x: 0, z: 25 }, { x: 0, z: -25 },
-      { x: 65, z: 0 }, { x: -65, z: 0 }, { x: 0, z: 65 }, { x: 0, z: -65 },
-      { x: 110, z: 0 }, { x: -110, z: 0 }, { x: 0, z: 110 }, { x: 0, z: -110 },
-      { x: 160, z: 0 }, { x: -160, z: 0 }, { x: 0, z: 160 }, { x: 0, z: -160 },
-      { x: -90, z: -90 }, { x: 90, z: -90 }, { x: -90, z: 90 }, { x: 90, z: 90 },
-      { x: -150, z: -150 }, { x: 150, z: -150 }, { x: -150, z: 150 }, { x: 150, z: 150 },
-    ];
-    for (const lp of lightPositions) {
-      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 5, 6), poleMat);
-      pole.position.set(lp.x, 2.5, lp.z);
-      this.scene.add(pole);
-      const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.2, 6, 6), lightMat);
-      bulb.position.set(lp.x, 5, lp.z);
-      this.scene.add(bulb);
-      const pl = new THREE.PointLight(0xffeecc, 0.5, 25);
-      pl.position.set(lp.x, 4.8, lp.z);
-      this.scene.add(pl);
-    }
+    const addRoad = (cx: number, cz: number, w: number, d: number) => {
+      const road = new THREE.Mesh(new THREE.BoxGeometry(w, 0.08, d), roadMat);
+      road.position.set(cx, 0.04, cz);
+      road.receiveShadow = true;
+      this.scene.add(road);
+    };
 
-    const hydrantMat = new THREE.MeshLambertMaterial({ color: 0xcc2222 });
-    const hydrants = [
-      { x: -80, z: -80 }, { x: -140, z: -80 }, { x: -80, z: -140 },
-      { x: -160, z: -60 }, { x: -60, z: -160 },
-    ];
-    for (const h of hydrants) {
-      const hydrant = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.6, 8), hydrantMat);
-      hydrant.position.set(h.x, 0.3, h.z);
-      this.scene.add(hydrant);
-    }
+    const addSidewalk = (cx: number, cz: number, w: number, d: number) => {
+      const sw = new THREE.Mesh(new THREE.BoxGeometry(w, 0.12, d), sidewalkMat);
+      sw.position.set(cx, 0.06, cz);
+      this.scene.add(sw);
+    };
 
-    const containerColors = [0x2266aa, 0xcc3333, 0x22aa44, 0xddaa22, 0x884488];
-    const containerPositions = [
-      { x: 100, z: -160, r: 0.3 }, { x: 110, z: -130, r: -0.2 },
-      { x: 170, z: -130, r: 0.5 }, { x: 100, z: -100, r: Math.PI / 3 },
-      { x: 180, z: -160, r: -0.4 }, { x: 140, z: -100, r: 0.8 },
-      { x: 190, z: -100, r: -0.6 }, { x: 120, z: -180, r: 0.1 },
-    ];
-    for (let i = 0; i < containerPositions.length; i++) {
-      const cp = containerPositions[i];
-      const c = new THREE.Mesh(
-        new THREE.BoxGeometry(3.5, 3.5, 9),
-        new THREE.MeshLambertMaterial({ color: containerColors[i % containerColors.length] })
+    const addDash = (cx: number, cz: number, horizontal: boolean) => {
+      const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(horizontal ? 4 : 0.15, 0.09, horizontal ? 0.15 : 4),
+        dashMat
       );
-      c.position.set(cp.x, 1.75, cp.z);
-      c.rotation.y = cp.r;
-      c.castShadow = true;
-      this.scene.add(c);
+      mesh.position.set(cx, 0.1, cz);
+      this.scene.add(mesh);
+    };
+
+    addRoad(0, 0, 30, 800);
+    addSidewalk(-16.5, 0, 3, 800);
+    addSidewalk(16.5, 0, 3, 800);
+    for (let z = -400; z < 400; z += 10) {
+      addDash(0, z, false);
     }
 
-    const barrelMat = new THREE.MeshLambertMaterial({ color: 0x556644 });
-    const barrels = [
-      { x: 100, z: -110 }, { x: 103, z: -108 }, { x: 170, z: -110 },
-      { x: 173, z: -108 }, { x: 100, z: -170 }, { x: 160, z: -180 },
-    ];
-    for (const b of barrels) {
-      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.8, 8), barrelMat);
-      barrel.position.set(b.x, 0.4, b.z);
-      this.scene.add(barrel);
+    const crossRoads = [-300, -150, 0, 150, 300];
+    for (const cz of crossRoads) {
+      if (cz === 0) continue;
+      addRoad(0, cz, 800, 12);
+      addSidewalk(0, cz - 7.5, 800, 3);
+      addSidewalk(0, cz + 7.5, 800, 3);
+      for (let x = -400; x < 400; x += 10) {
+        addDash(x, cz, true);
+      }
     }
+  }
 
-    const stallMat = new THREE.MeshLambertMaterial({ color: 0xCC8844 });
-    const stallPositions = [
-      { x: -100, z: 110 }, { x: -140, z: 125 }, { x: -100, z: 160 },
-      { x: -160, z: 160 }, { x: -80, z: 200 },
-    ];
-    for (const sp of stallPositions) {
-      const stall = new THREE.Mesh(new THREE.BoxGeometry(3.5, 2.8, 3.5), stallMat);
-      stall.position.set(sp.x, 1.4, sp.z);
-      stall.castShadow = true;
-      this.scene.add(stall);
-      const awning = new THREE.Mesh(
-        new THREE.BoxGeometry(4.5, 0.1, 4.5),
-        new THREE.MeshLambertMaterial({ color: 0xdd6633 })
-      );
-      awning.position.set(sp.x, 2.9, sp.z);
-      this.scene.add(awning);
-    }
-
-    const trunkMat = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
-    const leafMat = new THREE.MeshLambertMaterial({ color: 0x228833 });
-    const treePositions = [
-      { x: 100, z: 100 }, { x: 130, z: 100 }, { x: 160, z: 100 },
-      { x: 100, z: 130 }, { x: 160, z: 130 },
-      { x: 100, z: 160 }, { x: 130, z: 160 }, { x: 160, z: 160 },
-      { x: 190, z: 110 }, { x: 190, z: 150 },
-      { x: 110, z: 190 }, { x: 150, z: 190 },
-      { x: 180, z: 180 }, { x: 120, z: 120 },
-    ];
-    for (const tp of treePositions) {
-      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.2, 3, 6), trunkMat);
-      trunk.position.set(tp.x, 1.5, tp.z);
-      this.scene.add(trunk);
-      const leaves = new THREE.Mesh(new THREE.SphereGeometry(1.8, 8, 6), leafMat);
-      leaves.position.set(tp.x, 4, tp.z);
-      leaves.castShadow = true;
-      this.scene.add(leaves);
-    }
-
-    const fenceMat = new THREE.MeshLambertMaterial({ color: 0x8B7355 });
-    const fences = [
-      { x: 110, z: 95, w: 12, d: 0.15 }, { x: 155, z: 95, w: 12, d: 0.15 },
-      { x: 110, z: 165, w: 12, d: 0.15 }, { x: 155, z: 165, w: 12, d: 0.15 },
-    ];
-    for (const f of fences) {
-      const fence = new THREE.Mesh(new THREE.BoxGeometry(f.w, 1.2, f.d), fenceMat);
-      fence.position.set(f.x, 0.6, f.z);
-      this.scene.add(fence);
-    }
+  private createPlaza() {
+    const plazaGeo = new THREE.CircleGeometry(45, 32);
+    plazaGeo.rotateX(-Math.PI / 2);
+    const plaza = new THREE.Mesh(plazaGeo, new THREE.MeshLambertMaterial({ color: 0x666666 }));
+    plaza.position.set(0, 0.06, 0);
+    plaza.receiveShadow = true;
+    this.scene.add(plaza);
 
     const fountainMat = new THREE.MeshLambertMaterial({ color: 0x889999 });
-    const fountain = new THREE.Mesh(new THREE.CylinderGeometry(4, 4.5, 1.2, 20), fountainMat);
+    const fountain = new THREE.Mesh(new THREE.CylinderGeometry(3.5, 4, 1.2, 20), fountainMat);
     fountain.position.set(0, 0.6, 0);
+    fountain.castShadow = true;
     this.scene.add(fountain);
-    const water = new THREE.Mesh(
-      new THREE.CylinderGeometry(3.6, 3.6, 0.1, 20),
-      new THREE.MeshLambertMaterial({ color: 0x3388cc, transparent: true, opacity: 0.7 })
-    );
-    water.position.set(0, 1.2, 0);
-    this.scene.add(water);
 
-    const signs = [
-      { x: -100, z: -100, text: 'DOWNTOWN' },
-      { x: 100, z: -100, text: 'INDUSTRIAL' },
-      { x: -100, z: 100, text: 'FAVELA' },
-      { x: 100, z: 100, text: 'SUBURBIO' },
-    ];
-    for (const sg of signs) {
-      const signCanvas = document.createElement('canvas');
-      signCanvas.width = 256;
-      signCanvas.height = 128;
-      const ctx = signCanvas.getContext('2d')!;
-      ctx.fillStyle = '#111111';
-      ctx.fillRect(0, 0, 256, 128);
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 28px Arial';
-      ctx.textAlign = 'center';
-      ctx.fillText(sg.text, 128, 75);
-      const tex = new THREE.CanvasTexture(signCanvas);
-      const signMat = new THREE.SpriteMaterial({ map: tex, transparent: true });
-      const sign = new THREE.Sprite(signMat);
-      sign.position.set(sg.x, 4, sg.z);
-      sign.scale.set(5, 2.5, 1);
-      this.scene.add(sign);
-    }
+    const water = new THREE.Mesh(
+      new THREE.CylinderGeometry(3.1, 3.1, 0.15, 20),
+      new THREE.MeshLambertMaterial({ color: 0x3388cc, transparent: true, opacity: 0.75 })
+    );
+    water.position.set(0, 1.25, 0);
+    this.scene.add(water);
   }
 
   private createVehicle3D(vehicle: VehicleData) {
@@ -962,176 +850,140 @@ export default class Game {
 
   private createHouse3D(house: HouseData) {
     const group = new THREE.Group();
-    const wt = 0.3;
-    const hh = house.h;
-    const hw = house.w / 2;
-    const hd = house.d / 2;
-    const doorSide = (house as any).doorSide ?? 0;
-    const doorW = 2.0;
+    const { x, z, w, h, d, color, roofColor } = house;
+    const wt = 0.35;
+    const hh = h;
+    const hw = w / 2;
+    const hd = d / 2;
+    const doorSide = house.doorSide ?? 0;
+    const doorW = 2.2;
+    const floorH = 3.5;
+    const floors = Math.max(1, Math.round(hh / floorH));
+    const groundY = this.getHeight(x, z);
 
-    const wallMat = new THREE.MeshLambertMaterial({ color: house.color });
-    const innerMat = new THREE.MeshLambertMaterial({ color: 0xd2c4a8 });
-    const floorMat = new THREE.MeshLambertMaterial({ color: 0x8B7355 });
-    const ceilingMat = new THREE.MeshLambertMaterial({ color: 0xc8b89a });
-    const windowMat = new THREE.MeshBasicMaterial({ color: 0x88bbee, transparent: true, opacity: 0.6 });
+    const wallMat = new THREE.MeshLambertMaterial({ color });
+    const floorMat = new THREE.MeshLambertMaterial({ color: 0x998877 });
+    const roofMat = new THREE.MeshLambertMaterial({ color: roofColor ?? 0x555555 });
+    const stairMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
+    const parapetMat = new THREE.MeshLambertMaterial({ color });
 
-    const floor = new THREE.Mesh(new THREE.BoxGeometry(house.w, 0.15, house.d), floorMat);
-    floor.position.y = 0.075;
-    floor.receiveShadow = true;
-    group.add(floor);
-
-    const ceiling = new THREE.Mesh(new THREE.BoxGeometry(house.w, 0.15, house.d), ceilingMat);
-    ceiling.position.y = hh;
-    group.add(ceiling);
-
-    if (house.name === 'Predio' || house.name === 'Escritorio') {
-      const roof = new THREE.Mesh(new THREE.BoxGeometry(house.w + 0.5, 0.5, house.d + 0.5), new THREE.MeshLambertMaterial({ color: house.roofColor || 0x444444 }));
-      roof.position.y = hh + 0.25;
-      group.add(roof);
-    } else if (house.name !== 'Container') {
-      const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.max(house.w, house.d) * 0.72, 2, 4), new THREE.MeshLambertMaterial({ color: house.roofColor || 0x8B0000 }));
-      roof.position.y = hh + 1;
-      roof.rotation.y = Math.PI / 4;
-      group.add(roof);
-    }
-
-    const addWall = (cx: number, cz: number, w: number, d: number) => {
-      const wall = new THREE.Mesh(new THREE.BoxGeometry(w, hh, d), wallMat);
-      wall.position.set(cx, hh / 2, cz);
-      wall.castShadow = true;
-      group.add(wall);
-      const inner = new THREE.Mesh(new THREE.BoxGeometry(w, hh, 0.05), innerMat);
-      inner.position.set(cx, hh / 2, cz);
-      group.add(inner);
+    const addBox = (cx: number, cy: number, cz: number, bw: number, bh: number, bd: number, mat: THREE.Material, cast = true) => {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, bd), mat);
+      mesh.position.set(x + cx, cy, z + cz);
+      mesh.castShadow = cast;
+      mesh.receiveShadow = true;
+      group.add(mesh);
+      return mesh;
     };
 
-    const addDoorWall = (cx: number, cz: number, wallW: number, wallD: number, isHorizontal: boolean) => {
-      if (isHorizontal) {
-        const segW = (wallW - doorW) / 2;
-        if (segW > 0.1) {
-          addWall(cx - wallW / 2 + segW / 2, cz, segW, wallD);
-          addWall(cx + wallW / 2 - segW / 2, cz, segW, wallD);
+    for (let f = 0; f <= floors; f++) {
+      const fy = groundY + f * floorH;
+      const isTop = f === floors;
+      addBox(0, fy + 0.075, 0, w, 0.15, d, isTop ? roofMat : floorMat);
+    }
+
+    const wallSegs: { x: number; z: number; w: number; d: number }[] = [];
+    const splitWall = (side: number) => {
+      if (side === doorSide) {
+        const totalLen = side === 0 || side === 2 ? w : d;
+        const segLen = (totalLen - doorW) / 2;
+        if (side === 0) {
+          wallSegs.push({ x: -hw + segLen / 2, z: -hd, w: segLen, d: wt });
+          wallSegs.push({ x: hw - segLen / 2, z: -hd, w: segLen, d: wt });
+        } else if (side === 1) {
+          wallSegs.push({ x: hw, z: -hd + segLen / 2, w: wt, d: segLen });
+          wallSegs.push({ x: hw, z: hd - segLen / 2, w: wt, d: segLen });
+        } else if (side === 2) {
+          wallSegs.push({ x: -hw + segLen / 2, z: hd, w: segLen, d: wt });
+          wallSegs.push({ x: hw - segLen / 2, z: hd, w: segLen, d: wt });
+        } else {
+          wallSegs.push({ x: -hw, z: -hd + segLen / 2, w: wt, d: segLen });
+          wallSegs.push({ x: -hw, z: hd - segLen / 2, w: wt, d: segLen });
         }
       } else {
-        const segD = (wallD - doorW) / 2;
-        if (segD > 0.1) {
-          addWall(cx, cz - wallD / 2 + segD / 2, wallW, segD);
-          addWall(cx, cz + wallD / 2 - segD / 2, wallW, segD);
+        if (side === 0 || side === 2) {
+          const sz = side === 0 ? -hd : hd;
+          wallSegs.push({ x: 0, z: sz, w: w, d: wt });
+        } else {
+          const sx = side === 1 ? hw : -hw;
+          wallSegs.push({ x: sx, z: 0, w: wt, d: d });
         }
       }
     };
 
-    switch (doorSide) {
-      case 0: addWall(0, -hd, house.w, wt); addWall(hw, 0, wt, house.d); addWall(-hw, 0, wt, house.d); addDoorWall(0, hd, house.w, wt, true); break;
-      case 1: addWall(hw, 0, wt, house.d); addWall(0, hd, house.w, wt); addWall(0, -hd, house.w, wt); addDoorWall(-hw, 0, wt, house.d, false); break;
-      case 2: addWall(0, hd, house.w, wt); addWall(hw, 0, wt, house.d); addWall(-hw, 0, wt, house.d); addDoorWall(0, -hd, house.w, wt, true); break;
-      case 3: addWall(-hw, 0, wt, house.d); addWall(0, hd, house.w, wt); addWall(0, -hd, house.w, wt); addDoorWall(hw, 0, wt, house.d, false); break;
+    splitWall(0);
+    splitWall(1);
+    splitWall(2);
+    splitWall(3);
+
+    for (const seg of wallSegs) {
+      addBox(seg.x, groundY + hh / 2, seg.z, seg.w, hh, seg.d, wallMat);
+      this.houseBounds.push({
+        minX: x + seg.x - seg.w / 2 - 0.3,
+        maxX: x + seg.x + seg.w / 2 + 0.3,
+        minZ: z + seg.z - seg.d / 2 - 0.3,
+        maxZ: z + seg.z + seg.d / 2 + 0.3,
+      });
     }
 
-    if (hh >= 6) {
-      const winW = 0.8;
-      const winH = 1.0;
-      const cols = Math.floor(house.w / 3.5);
-      const rows = Math.floor(hh / 4);
-      for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < cols; c++) {
-          const wx = -house.w / 2 + 1.8 + c * (house.w / (cols + 0.3));
-          const wy = 2 + r * 3.5;
-          if (wy > hh - 1) continue;
-          const win = new THREE.Mesh(new THREE.PlaneGeometry(winW, winH), windowMat);
-          win.position.set(wx, wy, -hd - 0.16);
-          group.add(win);
-          const win2 = new THREE.Mesh(new THREE.PlaneGeometry(winW, winH), windowMat);
-          win2.position.set(wx, wy, hd + 0.16);
-          win2.rotation.y = Math.PI;
-          group.add(win2);
+    if (floors >= 2) {
+      const stairW = 1.8;
+      const stairLen = Math.min(w, d) * 0.6;
+      const stepsPerFloor = 8;
+      const stepH = floorH / stepsPerFloor;
+      const stepD = stairLen / stepsPerFloor;
+
+      let stairX = 0;
+      let stairZ = 0;
+      let stairDirX = 0;
+      let stairDirZ = 1;
+
+      switch (doorSide) {
+        case 0: stairX = -hw + 2; stairZ = -hd + stairLen / 2 + 1; stairDirZ = 1; break;
+        case 1: stairX = hw - stairLen / 2 - 1; stairZ = -hd + 2; stairDirX = -1; break;
+        case 2: stairX = hw - 2; stairZ = hd - stairLen / 2 - 1; stairDirZ = -1; break;
+        case 3: stairX = -hw + stairLen / 2 + 1; stairZ = hd - 2; stairDirX = 1; break;
+      }
+
+      this.buildingFloors.push({
+        minX: x - hw, maxX: x + hw,
+        minZ: z - hd, maxZ: z + hd,
+        groundY, floorH, floors,
+        stairX: x + stairX, stairZ: z + stairZ,
+        stairDirX, stairDirZ, stairLen,
+      });
+
+      for (let f = 0; f < floors; f++) {
+        const baseY = groundY + f * floorH;
+        for (let s = 0; s < stepsPerFloor; s++) {
+          const sy = baseY + stepH / 2 + s * stepH;
+          const sx = stairX + stairDirX * (s * stepD + stepD / 2);
+          const sz = stairZ + stairDirZ * (s * stepD + stepD / 2);
+          addBox(sx, sy, sz, stairW, stepH + 0.05, stepD, stairMat);
         }
       }
+
+      const pWallH = 0.9;
+      const pWallT = 0.2;
+      const roofY = groundY + hh;
+      addBox(0, roofY + pWallH / 2, -hd, w + pWallT * 2, pWallH, pWallT, parapetMat);
+      addBox(0, roofY + pWallH / 2, hd, w + pWallT * 2, pWallH, pWallT, parapetMat);
+      addBox(-hw, roofY + pWallH / 2, 0, pWallT, pWallH, d, parapetMat);
+      addBox(hw, roofY + pWallH / 2, 0, pWallT, pWallH, d, parapetMat);
     }
 
-    const roofLight = new THREE.PointLight(0xffe4b5, 0.5, 16);
-    roofLight.position.set(0, hh - 0.3, 0);
-    group.add(roofLight);
-
-    const labelCanvas = document.createElement('canvas');
-    labelCanvas.width = 256;
-    labelCanvas.height = 128;
-    const ctx = labelCanvas.getContext('2d')!;
-    ctx.fillStyle = 'rgba(0,0,0,0.7)';
-    ctx.fillRect(0, 0, 256, 128);
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 20px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText(house.name, 128, 50);
-    ctx.font = '14px Arial';
-    ctx.fillStyle = '#aaaaaa';
-    ctx.fillText('Zona de combate', 128, 80);
-    const texture = new THREE.CanvasTexture(labelCanvas);
-    const labelMat = new THREE.SpriteMaterial({ map: texture, transparent: true });
-    const label = new THREE.Sprite(labelMat);
-    label.position.set(0, hh + 2, 0);
-    label.scale.set(4, 2, 1);
-    group.add(label);
-
-    group.position.set(house.x, 0, house.z);
+    group.position.set(0, 0, 0);
     this.scene.add(group);
     this.houses3D.set(house.id, group);
-
-    const hx = house.x;
-    const hz = house.z;
-    const push = (minX: number, maxX: number, minZ: number, maxZ: number) => {
-      this.houseBounds.push({ minX, maxX, minZ, maxZ });
-    };
-    const addWallBounds = (cx: number, cz: number, w: number, d: number) => {
-      push(hx + cx - w / 2, hx + cx + w / 2, hz + cz - d / 2, hz + cz + d / 2);
-    };
-    const addDoorWallBounds = (cx: number, cz: number, wallW: number, wallD: number, isHorizontal: boolean) => {
-      if (isHorizontal) {
-        const segW = (wallW - doorW) / 2;
-        if (segW > 0.1) {
-          addWallBounds(cx - wallW / 2 + segW / 2, cz, segW, wallD);
-          addWallBounds(cx + wallW / 2 - segW / 2, cz, segW, wallD);
-        }
-      } else {
-        const segD = (wallD - doorW) / 2;
-        if (segD > 0.1) {
-          addWallBounds(cx, cz - wallD / 2 + segD / 2, wallW, segD);
-          addWallBounds(cx, cz + wallD / 2 - segD / 2, wallW, segD);
-        }
-      }
-    };
-
-    switch (doorSide) {
-      case 0:
-        addWallBounds(0, -hd, house.w, wt);
-        addWallBounds(hw, 0, wt, house.d);
-        addWallBounds(-hw, 0, wt, house.d);
-        addDoorWallBounds(0, hd, house.w, wt, true);
-        break;
-      case 1:
-        addWallBounds(hw, 0, wt, house.d);
-        addWallBounds(0, hd, house.w, wt);
-        addWallBounds(0, -hd, house.w, wt);
-        addDoorWallBounds(-hw, 0, wt, house.d, false);
-        break;
-      case 2:
-        addWallBounds(0, hd, house.w, wt);
-        addWallBounds(hw, 0, wt, house.d);
-        addWallBounds(-hw, 0, wt, house.d);
-        addDoorWallBounds(0, -hd, house.w, wt, true);
-        break;
-      case 3:
-        addWallBounds(-hw, 0, wt, house.d);
-        addWallBounds(0, hd, house.w, wt);
-        addWallBounds(0, -hd, house.w, wt);
-        addDoorWallBounds(hw, 0, wt, house.d, false);
-        break;
-    }
   }
 
   private updateVehicle3D(vehicle: VehicleData) {
     const existing = this.vehicles3D.get(vehicle.id);
-    if (existing) this.scene.remove(existing);
+    if (existing) {
+      existing.position.set(vehicle.x, vehicle.y, vehicle.z);
+      existing.rotation.y = vehicle.rotation;
+      return;
+    }
     this.createVehicle3D(vehicle);
   }
 
@@ -1153,6 +1005,20 @@ export default class Game {
         this.projectiles3D.set(p.id, mesh);
       }
       mesh.position.set(p.x, p.y, p.z);
+    }
+  }
+
+  private updatePlayerHealthBars() {
+    for (const [id, group] of this.players3D) {
+      const hp = this.playerHealthMap.get(id) ?? 100;
+      const hpRatio = hp / 100;
+      const hpBarMesh = group.children.find(c => c.position.y > 2.1 && c.position.y < 2.3 && c.type === 'Mesh' && (c as THREE.Mesh).geometry.type === 'PlaneGeometry') as THREE.Mesh | undefined;
+      if (!hpBarMesh) continue;
+      const hpMat = hpBarMesh.material as THREE.MeshBasicMaterial;
+      hpMat.color.setHex(hpRatio > 0.5 ? 0x4CAF50 : hpRatio > 0.25 ? 0xFF9800 : 0xf44336);
+      const scaleX = 0.78 * hpRatio;
+      hpBarMesh.scale.x = scaleX;
+      hpBarMesh.position.x = -(0.78 * (1 - hpRatio)) / 2;
     }
   }
 
@@ -1195,9 +1061,14 @@ export default class Game {
         this.onStateChange?.('playing');
         this.hideWASTED();
       }
-      else if (e.code === 'Tab' && this.state === 'playing') {
-        e.preventDefault();
-        this.toggleShop();
+      else if (e.code === 'Tab' || e.code === 'Escape') {
+        if (this.shopOpen) {
+          e.preventDefault();
+          this.closeShop();
+        } else if (e.code === 'Tab' && this.state === 'playing') {
+          e.preventDefault();
+          this.openShop();
+        }
       }
     });
 
@@ -1262,13 +1133,15 @@ export default class Game {
     if (this.playerData.ammo <= 0) return;
 
     this.lastShot = now;
-    const dir = new THREE.Vector3(0, 0, -1);
-    dir.applyQuaternion(this.camera.quaternion);
+    const dir = new THREE.Vector3();
+    this.camera.getWorldDirection(dir);
 
     const spread = weapon.spread;
-    dir.x += (Math.random() - 0.5) * spread;
-    dir.y += (Math.random() - 0.5) * spread;
-    dir.z += (Math.random() - 0.5) * spread;
+    if (spread > 0) {
+      dir.x += (Math.random() - 0.5) * spread;
+      dir.y += (Math.random() - 0.5) * spread;
+      dir.z += (Math.random() - 0.5) * spread;
+    }
     dir.normalize();
 
     this.socket?.emit('shoot', {
@@ -1282,6 +1155,11 @@ export default class Game {
 
     this.playerData.ammo--;
     this.recoilAmount = 1;
+    if (this.muzzleFlash) {
+      this.muzzleFlash.visible = true;
+      this.muzzleFlashTimer = 0.06;
+      (this.muzzleFlash.material as THREE.MeshBasicMaterial).opacity = 1;
+    }
     this.updateHUD();
   }
 
@@ -1352,6 +1230,7 @@ export default class Game {
       this.animateDeathCamera(delta);
     }
 
+    this.updatePlayerHealthBars();
     this.renderer.render(this.scene, this.camera);
   };
 
@@ -1389,6 +1268,25 @@ export default class Game {
     this.playerData.x = Math.max(-this.worldSize / 2, Math.min(this.worldSize / 2, this.playerData.x));
     this.playerData.z = Math.max(-this.worldSize / 2, Math.min(this.worldSize / 2, this.playerData.z));
 
+    let baseY = this.getHeight(this.playerData.x, this.playerData.z);
+    for (const bf of this.buildingFloors) {
+      if (this.playerData.x >= bf.minX && this.playerData.x <= bf.maxX &&
+          this.playerData.z >= bf.minZ && this.playerData.z <= bf.maxZ) {
+        const dx = this.playerData.x - bf.stairX;
+        const dz = this.playerData.z - bf.stairZ;
+        const proj = dx * bf.stairDirX + dz * bf.stairDirZ;
+        if (proj >= 0 && proj <= bf.stairLen) {
+          const t = proj / bf.stairLen;
+          const stairFloor = Math.floor(t * bf.floors);
+          const stairT = (t * bf.floors) - stairFloor;
+          baseY = bf.groundY + stairFloor * bf.floorH + stairT * bf.floorH;
+        } else {
+          baseY = bf.groundY;
+        }
+        break;
+      }
+    }
+    this.playerData.y = baseY;
     this.camera.position.set(this.playerData.x, this.playerData.y + this.cameraHeight, this.playerData.z);
 
     this.socket?.emit('position', {
@@ -1430,7 +1328,10 @@ export default class Game {
     this.playerData.rotation = this.vehicleRotation;
     this.playerData.speed = Math.abs(speed);
 
+    const terrainH = this.getHeight(this.playerData.x, this.playerData.z);
+    this.playerData.y = terrainH;
     vehicle.x = this.playerData.x;
+    vehicle.y = terrainH + 0.5;
     vehicle.z = this.playerData.z;
     vehicle.rotation = this.vehicleRotation;
     vehicle.speed = speed;
@@ -1445,7 +1346,8 @@ export default class Game {
     const camHeight = 3;
     const camX = this.playerData.x - Math.sin(this.vehicleRotation) * camDist;
     const camZ = this.playerData.z - Math.cos(this.vehicleRotation) * camDist;
-    this.camera.position.set(camX, this.playerData.y + camHeight, camZ);
+    const camY = this.getHeight(camX, camZ);
+    this.camera.position.set(camX, camY + camHeight, camZ);
 
     const lookX = this.playerData.x + Math.sin(this.vehicleRotation) * 3;
     const lookZ = this.playerData.z + Math.cos(this.vehicleRotation) * 3;
@@ -1539,6 +1441,10 @@ export default class Game {
     }
   }
 
+  private isMobileDevice(): boolean {
+    return /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || ('ontouchstart' in window && window.innerWidth < 1024);
+  }
+
   private openShop() {
     this.shopOpen = true;
     if (document.pointerLockElement) document.exitPointerLock();
@@ -1622,15 +1528,6 @@ export default class Game {
 
     render();
     document.body.appendChild(overlay);
-
-    const escHandler = (e: KeyboardEvent) => {
-      if (e.code === 'Tab' || e.code === 'Escape') {
-        e.preventDefault();
-        this.closeShop();
-        window.removeEventListener('keydown', escHandler);
-      }
-    };
-    window.addEventListener('keydown', escHandler);
   }
 
   private closeShop() {

@@ -16,16 +16,35 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
       return NextResponse.json({ error: 'Sala não encontrada' }, { status: 404 });
     }
 
-    const { error } = await supabaseAdmin.from('phrases').insert({
-      room_code: code,
-      round_number: room.current_round,
-      author_id: playerId,
-      text: text.trim(),
-      is_initial: true,
-    });
+    const { data: existing } = await supabaseAdmin
+      .from('phrases')
+      .select('id')
+      .eq('room_code', code)
+      .eq('round_number', room.current_round)
+      .eq('author_id', playerId)
+      .eq('is_initial', true)
+      .maybeSingle();
 
-    if (error) {
-      return NextResponse.json({ error: 'Erro ao salvar frase' }, { status: 500 });
+    if (existing) {
+      const { error: uErr } = await supabaseAdmin
+        .from('phrases')
+        .update({ text: text.trim() })
+        .eq('id', existing.id);
+      if (uErr) {
+        return NextResponse.json({ error: 'Erro ao atualizar frase' }, { status: 500 });
+      }
+    } else {
+      const { error } = await supabaseAdmin.from('phrases').insert({
+        room_code: code,
+        round_number: room.current_round,
+        author_id: playerId,
+        text: text.trim(),
+        is_initial: true,
+      });
+
+      if (error) {
+        return NextResponse.json({ error: 'Erro ao salvar frase' }, { status: 500 });
+      }
     }
 
     await supabaseAdmin

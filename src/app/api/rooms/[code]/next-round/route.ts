@@ -59,6 +59,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
     const pidSet = players.map((p) => p.id);
 
     if (currentPhase === 'writing') {
+      // Evita transição duplicada se assignments já existem
+      const { data: existingAssignments } = await supabaseAdmin
+        .from('assignments')
+        .select('id')
+        .eq('room_code', code)
+        .eq('round_number', currentRound + 1)
+        .eq('phase', 'drawing')
+        .limit(1);
+      if (existingAssignments && existingAssignments.length > 0) {
+        return NextResponse.json({ success: true, newPhase: 'drawing', round: currentRound + 1 });
+      }
+
       const allDone = await allPlayersSubmitted(code);
       if (!allDone && !force) {
         return NextResponse.json({ success: false, message: 'Aguardando todos' });
@@ -73,18 +85,29 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
           .eq('has_submitted', false);
 
         if (missing && missing.length > 0) {
-          await supabaseAdmin.from('phrases').insert(
-            missing.map((p) => ({
-              room_code: code,
-              round_number: currentRound,
-              author_id: p.id,
-              text: getRandomDefault(),
-              is_initial: true,
-            }))
-          );
+          for (const p of missing) {
+            const { data: existingP } = await supabaseAdmin
+              .from('phrases')
+              .select('id')
+              .eq('room_code', code)
+              .eq('round_number', currentRound)
+              .eq('author_id', p.id)
+              .eq('is_initial', true)
+              .maybeSingle();
+            if (!existingP) {
+              await supabaseAdmin.from('phrases').insert({
+                room_code: code,
+                round_number: currentRound,
+                author_id: p.id,
+                text: getRandomDefault(),
+                is_initial: true,
+              });
+            }
+          }
         }
       }
 
+      // Pega UMA frase por jogador (usa uma subquery pra evitar duplicatas)
       const { data: phrases } = await supabaseAdmin
         .from('phrases')
         .select('id, author_id')
@@ -93,11 +116,26 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
         .eq('is_initial', true)
         .in('author_id', pidSet);
 
-      if (!phrases || phrases.length !== players.length) {
+      if (!phrases || phrases.length === 0) {
+        return NextResponse.json({ error: 'Nenhuma frase encontrada' }, { status: 500 });
+      }
+
+      // Se houver mais frases que players, pega só a primeira de cada player
+      let deduped = phrases;
+      if (phrases.length > players.length) {
+        const seen = new Set<string>();
+        deduped = phrases.filter(p => {
+          if (seen.has(p.author_id)) return false;
+          seen.add(p.author_id);
+          return true;
+        });
+      }
+
+      if (deduped.length !== players.length) {
         return NextResponse.json({ error: 'Contagem de frases inválida' }, { status: 500 });
       }
 
-      const assignments = createAssignments(players, currentRound + 1, 'drawing', phrases.map((p) => p.id));
+      const assignments = createAssignments(players, currentRound + 1, 'drawing', deduped.map((p) => p.id));
       const { error: aErr } = await supabaseAdmin.from('assignments').insert(
         assignments.map((a) => ({ ...a, room_code: code, round_number: currentRound + 1, phase: 'drawing' }))
       );
@@ -114,6 +152,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
     }
 
     if (currentPhase === 'drawing') {
+      const { data: existingG } = await supabaseAdmin
+        .from('assignments')
+        .select('id')
+        .eq('room_code', code)
+        .eq('round_number', currentRound)
+        .eq('phase', 'guessing')
+        .limit(1);
+      if (existingG && existingG.length > 0) {
+        return NextResponse.json({ success: true, newPhase: 'guessing' });
+      }
+
       const allDone = await allPlayersSubmitted(code);
       if (!allDone && !force) {
         return NextResponse.json({ success: false, message: 'Aguardando todos' });
@@ -139,13 +188,22 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
           for (const p of missing) {
             const assign = assignments.find((a) => a.player_id === p.id);
             if (!assign) continue;
-            await supabaseAdmin.from('drawings').insert({
-              room_code: code,
-              round_number: currentRound,
-              phrase_id: assign.source_id,
-              drawer_id: p.id,
-              image_url: blankPNG,
-            });
+            const { data: existingD } = await supabaseAdmin
+              .from('drawings')
+              .select('id')
+              .eq('room_code', code)
+              .eq('round_number', currentRound)
+              .eq('drawer_id', p.id)
+              .maybeSingle();
+            if (!existingD) {
+              await supabaseAdmin.from('drawings').insert({
+                room_code: code,
+                round_number: currentRound,
+                phrase_id: assign.source_id,
+                drawer_id: p.id,
+                image_url: blankPNG,
+              });
+            }
           }
         }
       }
@@ -157,11 +215,25 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
         .eq('round_number', currentRound)
         .in('drawer_id', pidSet);
 
-      if (!drawings || drawings.length !== players.length) {
+      if (!drawings || drawings.length === 0) {
+        return NextResponse.json({ error: 'Nenhum desenho encontrado' }, { status: 500 });
+      }
+
+      let dedupedD = drawings;
+      if (drawings.length > players.length) {
+        const seen = new Set<string>();
+        dedupedD = drawings.filter(d => {
+          if (seen.has(d.drawer_id)) return false;
+          seen.add(d.drawer_id);
+          return true;
+        });
+      }
+
+      if (dedupedD.length !== players.length) {
         return NextResponse.json({ error: 'Contagem de desenhos inválida' }, { status: 500 });
       }
 
-      const assignments = createAssignments(players, currentRound, 'guessing', drawings.map((d) => d.id));
+      const assignments = createAssignments(players, currentRound, 'guessing', dedupedD.map((d) => d.id));
       const { error: aErr } = await supabaseAdmin.from('assignments').insert(
         assignments.map((a) => ({ ...a, room_code: code, round_number: currentRound, phase: 'guessing' }))
       );
@@ -177,6 +249,28 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
     }
 
     if (currentPhase === 'guessing') {
+      if (currentRound >= totalRounds) {
+        await supabaseAdmin.from('rooms').update({
+          current_phase: 'results',
+          status: 'finished',
+          finished_at: new Date().toISOString(),
+        }).eq('code', code);
+        return NextResponse.json({ success: true, newPhase: 'results' });
+      }
+
+      // Verifica se já existe próxima rodada
+      const nextRound = currentRound + 1;
+      const { data: existingNext } = await supabaseAdmin
+        .from('assignments')
+        .select('id')
+        .eq('room_code', code)
+        .eq('round_number', nextRound)
+        .eq('phase', 'drawing')
+        .limit(1);
+      if (existingNext && existingNext.length > 0) {
+        return NextResponse.json({ success: true, newPhase: 'drawing', round: nextRound });
+      }
+
       const allDone = await allPlayersSubmitted(code);
       if (!allDone && !force) {
         return NextResponse.json({ success: false, message: 'Aguardando todos' });
@@ -203,26 +297,26 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
             for (const p of missing) {
               const assign = guessAssignments.find((a) => a.player_id === p.id);
               if (!assign) continue;
-              await supabaseAdmin.from('guesses').insert({
-                room_code: code,
-                round_number: currentRound,
-                drawing_id: assign.source_id,
-                guesser_id: p.id,
-                text: getRandomDefault(),
-              });
+              const { data: existingG } = await supabaseAdmin
+                .from('guesses')
+                .select('id')
+                .eq('room_code', code)
+                .eq('round_number', currentRound)
+                .eq('guesser_id', p.id)
+                .maybeSingle();
+              if (!existingG) {
+                await supabaseAdmin.from('guesses').insert({
+                  room_code: code,
+                  round_number: currentRound,
+                  drawing_id: assign.source_id,
+                  guesser_id: p.id,
+                  text: getRandomDefault(),
+                });
+              }
               await supabaseAdmin.from('players').update({ has_submitted: true }).eq('id', p.id);
             }
           }
         }
-      }
-
-      if (currentRound >= totalRounds) {
-        await supabaseAdmin.from('rooms').update({
-          current_phase: 'results',
-          status: 'finished',
-          finished_at: new Date().toISOString(),
-        }).eq('code', code);
-        return NextResponse.json({ success: true, newPhase: 'results' });
       }
 
       const { data: guesses } = await supabaseAdmin
@@ -232,21 +326,44 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
         .eq('round_number', currentRound)
         .in('guesser_id', pidSet);
 
-      if (!guesses || guesses.length !== players.length) {
+      if (!guesses || guesses.length === 0) {
+        return NextResponse.json({ error: 'Nenhum palpite encontrado' }, { status: 500 });
+      }
+
+      // Deduplica palpites
+      let dedupedG = guesses;
+      if (guesses.length > players.length) {
+        const seen = new Set<string>();
+        dedupedG = guesses.filter(g => {
+          if (seen.has(g.guesser_id)) return false;
+          seen.add(g.guesser_id);
+          return true;
+        });
+      }
+
+      if (dedupedG.length !== players.length) {
         return NextResponse.json({ error: 'Contagem de palpites inválida' }, { status: 500 });
       }
 
-      const nextRound = currentRound + 1;
-      const { error: pErr } = await supabaseAdmin.from('phrases').insert(
-        guesses.map((g) => ({
-          room_code: code,
-          round_number: nextRound,
-          author_id: g.guesser_id,
-          text: g.text,
-          is_initial: false,
-        }))
-      );
-      if (pErr) return NextResponse.json({ error: 'Erro ao criar frases' }, { status: 500 });
+      // Cria frases da próxima rodada (upsert)
+      for (const g of dedupedG) {
+        const { data: existingPh } = await supabaseAdmin
+          .from('phrases')
+          .select('id')
+          .eq('room_code', code)
+          .eq('round_number', nextRound)
+          .eq('author_id', g.guesser_id)
+          .maybeSingle();
+        if (!existingPh) {
+          await supabaseAdmin.from('phrases').insert({
+            room_code: code,
+            round_number: nextRound,
+            author_id: g.guesser_id,
+            text: g.text,
+            is_initial: false,
+          });
+        }
+      }
 
       const { data: newPhrases } = await supabaseAdmin
         .from('phrases')
@@ -254,11 +371,25 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
         .eq('room_code', code)
         .eq('round_number', nextRound);
 
-      if (!newPhrases || newPhrases.length !== players.length) {
+      if (!newPhrases || newPhrases.length === 0) {
+        return NextResponse.json({ error: 'Nenhuma nova frase' }, { status: 500 });
+      }
+
+      let dedupedNP = newPhrases;
+      if (newPhrases.length > players.length) {
+        const seen = new Set<string>();
+        dedupedNP = newPhrases.filter(p => {
+          if (seen.has(p.author_id)) return false;
+          seen.add(p.author_id);
+          return true;
+        });
+      }
+
+      if (dedupedNP.length !== players.length) {
         return NextResponse.json({ error: 'Contagem de novas frases inválida' }, { status: 500 });
       }
 
-      const assignments = createAssignments(players, nextRound, 'drawing', newPhrases.map((p) => p.id));
+      const assignments = createAssignments(players, nextRound, 'drawing', dedupedNP.map((p) => p.id));
       const { error: aErr } = await supabaseAdmin.from('assignments').insert(
         assignments.map((a) => ({ ...a, room_code: code, round_number: nextRound, phase: 'drawing' }))
       );

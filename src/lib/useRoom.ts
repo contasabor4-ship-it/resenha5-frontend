@@ -151,11 +151,19 @@ export function useRoom(roomCode: string, playerId: string | null) {
   }
 
   async function advancePhase(force: boolean = false) {
-    await fetch(`/api/rooms/${roomCode}/next-round`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ force }),
-    });
+    try {
+      const res = await fetch(`/api/rooms/${roomCode}/next-round`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ force }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        console.warn('advancePhase error:', data.error || data);
+      }
+    } catch (e) {
+      console.warn('advancePhase fetch error:', e);
+    }
   }
 
   return {

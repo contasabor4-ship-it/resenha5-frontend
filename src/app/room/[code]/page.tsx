@@ -64,20 +64,17 @@ export default function RoomPage() {
 
   const handleSubmitPhrase = useCallback(async (text: string) => {
     await submitPhrase(text);
-    advancePhase();
-  }, [submitPhrase, advancePhase]);
+  }, [submitPhrase]);
 
   const handleSubmitDrawing = useCallback(async (imageData: string) => {
     if (!currentAssignment || !myPlayer) return;
     await submitDrawing(currentAssignment.source_id, imageData);
-    advancePhase();
-  }, [currentAssignment, myPlayer, submitDrawing, advancePhase]);
+  }, [currentAssignment, myPlayer, submitDrawing]);
 
   const handleSubmitGuess = useCallback(async (text: string) => {
     if (!currentAssignment || !myPlayer) return;
     await submitGuess(currentAssignment.source_id, text);
-    advancePhase();
-  }, [currentAssignment, myPlayer, submitGuess, advancePhase]);
+  }, [currentAssignment, myPlayer, submitGuess]);
 
   const phaseLabels: Record<string, string> = {
     lobby: 'Sala de Espera',
