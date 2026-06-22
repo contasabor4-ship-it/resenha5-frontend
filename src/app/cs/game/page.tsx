@@ -84,7 +84,7 @@ export default function CSGamePage() {
     net.onMatchJoined((data: any) => {
       const me = data.players.find((p: any) => p.id === data.playerId);
       if (me) {
-        lp.x = me.x; lp.y = me.y; lp.z = me.z;
+        lp.position.x = me.x; lp.position.y = me.y; lp.position.z = me.z;
         lp.health = me.health; lp.weapon = me.weapon; lp.ammo = me.ammo;
         lp.team = me.team;
         setHealth(me.health); setAmmo(me.ammo); setWeapon(me.weapon);
@@ -214,10 +214,10 @@ export default function CSGamePage() {
     if (lp && r && lp.alive) {
       if (inputRef.current.weapon !== lp.weapon) {
         lp.weapon = inputRef.current.weapon;
-        lp.ammo = WEAPONS[inputRef.current.weapon].ammo;
+        lp.ammo = WEAPONS[inputRef.current.weapon as WeaponType].ammo;
         r.switchWeapon(inputRef.current.weapon);
         setWeapon(inputRef.current.weapon);
-        setAmmo(WEAPONS[inputRef.current.weapon].ammo);
+        setAmmo(WEAPONS[inputRef.current.weapon as WeaponType].ammo);
       }
 
       if (updateLocalPlayerRef.current) {
@@ -229,7 +229,7 @@ export default function CSGamePage() {
       setArmor(lp.armor);
 
       if (inputRef.current.shooting && lp.weapon !== 'knife') {
-        const def = WEAPONS[lp.weapon];
+        const def = WEAPONS[lp.weapon as WeaponType];
         if (now - lastShotRef.current >= def.fireRate && lp.ammo > 0) {
           lastShotRef.current = now;
           lp.ammo--;
