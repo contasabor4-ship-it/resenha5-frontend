@@ -23,15 +23,26 @@ export interface CSNetworkClient {
 
 export function createCSNetworkClient(): CSNetworkClient {
   let socket: Socket;
+  let pendingTeam: 'CT' | 'T' | null = null;
   const listeners: Array<() => void> = [];
 
   function connect(url: string, nickname: string) {
     socket = io(url + '/cs', {
       transports: ['websocket', 'polling'],
       auth: { nickname },
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionAttempts: 10,
     });
-    socket.on('connect', () => console.log('CS connected:', socket.id));
-    socket.on('disconnect', () => console.log('CS disconnected'));
+    socket.on('connect', () => {
+      console.log('CS connected:', socket.id);
+      if (pendingTeam) {
+        console.log('CS: re-sending join_match on reconnect:', pendingTeam);
+        setTimeout(() => socket?.emit('join_match', { team: pendingTeam }), 200);
+      }
+    });
+    socket.on('disconnect', (reason) => console.log('CS disconnected:', reason));
+    socket.on('connect_error', (err) => console.error('CS connect_error:', err.message));
   }
 
   function on(event: string, cb: (...args: any[]) => void) {
@@ -40,6 +51,7 @@ export function createCSNetworkClient(): CSNetworkClient {
   }
 
   function joinMatch(team: 'CT' | 'T') {
+    pendingTeam = team;
     socket?.emit('join_match', { team });
   }
 
