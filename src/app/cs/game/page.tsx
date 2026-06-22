@@ -15,6 +15,9 @@ const CS_SERVER_URL = process.env.NEXT_PUBLIC_CS_SERVER_URL || process.env.NEXT_
 
 export default function CSGamePage() {
   const router = useRouter();
+  const [nickname, setNickname] = useState('');
+  const [teamSelect, setTeamSelect] = useState<'CT' | 'T' | null>(null);
+  const [joined, setJoined] = useState(false);
   const [room, setRoom] = useState<CSRoomState | null>(null);
   const [localHealth, setLocalHealth] = useState(100);
   const [localArmor, setLocalArmor] = useState(0);
@@ -39,89 +42,62 @@ export default function CSGamePage() {
   const recoilRef = useRef(0);
 
   useEffect(() => {
+    const saved = localStorage.getItem('r5_nickname');
+    if (!saved) { router.push('/'); return; }
+    setNickname(saved);
+  }, []);
+
+  useEffect(() => {
     pointerLockedRef.current = pointerLocked;
   }, [pointerLocked]);
 
-  useEffect(() => {
-    const nickname = localStorage.getItem('r5_nickname');
-    if (!nickname) { router.push('/cs'); return; }
-
+  const handleTeamSelect = useCallback((team: 'CT' | 'T') => {
+    setTeamSelect(team);
     const net = createCSNetworkClient();
     networkRef.current = net;
     net.connect(CS_SERVER_URL, nickname);
 
-    net.onRoomJoined((data) => {
-      setRoom(data.room);
-      const team = data.room.players.find(p => p.id === data.playerId)?.team || 'CT';
-      const weapon: WeaponType = team === 'CT' ? 'm4a1' : 'ak47';
-      localPlayerRef.current = createLocalPlayer(team === 'CT' ? DUST2.spawnCT : DUST2.spawnT, team);
-      localPlayerRef.current.weapon = weapon;
-      localPlayerRef.current.ammo = WEAPONS[weapon].ammo;
+    net.onMatchJoined((data) => {
+      setJoined(true);
+      const myPlayer = data.players.find(p => p.id === data.playerId);
+      const playerTeam = myPlayer?.team || team;
+      const weapon: WeaponType = playerTeam === 'CT' ? 'm4a1' : 'ak47';
+      localPlayerRef.current = createLocalPlayer(playerTeam === 'CT' ? DUST2.spawnCT : DUST2.spawnT, playerTeam);
       setLocalWeapon(weapon);
       setLocalAmmo(WEAPONS[weapon].ammo);
       setAlive(true);
+
+      if (data.match.phase === 'playing') {
+        setGameStarted(true);
+        setRoom({ code: '', ...data.match, players: data.players });
+      } else {
+        setRoom({ code: '', ...data.match, players: data.players });
+      }
     });
 
     net.onPlayersUpdate((players) => {
       setRoom(prev => prev ? { ...prev, players } : null);
       const myId = networkRef.current?.socket.id;
       enemyManagerRef.current.update(players.filter(p => p.id !== myId));
-
       const me = players.find(p => p.id === myId);
-      if (me && !me.isAlive) {
-        setAlive(false);
-      } else if (me && me.isAlive) {
-        setAlive(true);
-      }
+      if (me && !me.isAlive) setAlive(false);
+      else if (me && me.isAlive) setAlive(true);
     });
 
-    net.onGameState((state) => {
-      setRoom(state);
-    });
+    net.onGameState((state) => setRoom(state));
+    net.onBullet((data) => { (window as any).__csRenderer?.renderBullet(data); });
+    net.onKillfeed((data) => setKillfeed(prev => [data, ...prev].slice(0, 5)));
+    net.onPlayerDied((data) => { if (data.victimId === networkRef.current?.socket.id) setAlive(false); });
+    net.onCountdown((data) => { setCountdown(data.seconds); if (data.seconds <= 0) { setGameStarted(true); setCountdown(null); setAlive(true); } });
+    net.onRoundEnd((data) => { setGameStarted(false); setRoom(prev => prev ? { ...prev, ctScore: data.ctScore, tScore: data.tScore, round: data.round } : null); });
+    net.onMatchEnd((data) => { setGameStarted(false); setRoom(prev => prev ? { ...prev, ctScore: data.ctScore, tScore: data.tScore } : null); });
+    net.onError((msg) => console.error('CS error:', msg));
 
-    net.onBullet((data) => {
-      const renderer = (window as any).__csRenderer;
-      if (renderer) renderer.renderBullet(data);
-    });
-
-    net.onKillfeed((data) => {
-      setKillfeed(prev => [data, ...prev].slice(0, 5));
-    });
-
-    net.onPlayerDied((data) => {
-      if (data.victimId === networkRef.current?.socket.id) {
-        setAlive(false);
-      }
-    });
-
-    net.onCountdown((data) => {
-      setCountdown(data.seconds);
-      if (data.seconds <= 0) {
-        setGameStarted(true);
-        setCountdown(null);
-        setAlive(true);
-      }
-    });
-
-    net.onRoundEnd((data) => {
-      setGameStarted(false);
-      setRoom(prev => prev ? { ...prev, ctScore: data.ctScore, tScore: data.tScore, round: data.round } : null);
-    });
-
-    net.onMatchEnd((data) => {
-      setGameStarted(false);
-      setRoom(prev => prev ? { ...prev, ctScore: data.ctScore, tScore: data.tScore } : null);
-    });
-
-    net.onError((msg) => {
-      console.error('CS error:', msg);
-    });
-
-    return () => { net.disconnect(); };
-  }, []);
+    setTimeout(() => net.joinMatch(team), 500);
+  }, [nickname]);
 
   useEffect(() => {
-    if (!canvasRef.current || !gameStarted) return;
+    if (!canvasRef.current || !joined) return;
     let running = true;
     let renderer: any = null;
 
@@ -158,17 +134,9 @@ export default function CSGamePage() {
         inputRef.current.pitch = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, inputRef.current.pitch));
       };
 
-      const onMouseDown = (e: MouseEvent) => {
-        if (e.button === 0) inputRef.current.shooting = true;
-      };
-
-      const onMouseUp = (e: MouseEvent) => {
-        if (e.button === 0) inputRef.current.shooting = false;
-      };
-
-      const onPointerLockChange = () => {
-        setPointerLocked(!!document.pointerLockElement);
-      };
+      const onMouseDown = (e: MouseEvent) => { if (e.button === 0) inputRef.current.shooting = true; };
+      const onMouseUp = (e: MouseEvent) => { if (e.button === 0) inputRef.current.shooting = false; };
+      const onPointerLockChange = () => setPointerLocked(!!document.pointerLockElement);
 
       document.addEventListener('keydown', onKey);
       document.addEventListener('keyup', onKey);
@@ -198,7 +166,6 @@ export default function CSGamePage() {
           }
 
           const { shot } = updateLocalPlayer(lp, inputRef.current, dt, () => DUST2.boxes);
-
           setLocalHealth(lp.health);
           setLocalArmor(lp.armor);
           setLocalAmmo(lp.ammo);
@@ -221,36 +188,23 @@ export default function CSGamePage() {
             } else {
               for (const e of enemyManagerRef.current.enemies) {
                 const ePos = new THREE.Vector3(e.x, e.y + 1, e.z);
-                const dist = origin.distanceTo(ePos);
-                if (dist < 3) { hitId = e.id; break; }
+                if (origin.distanceTo(ePos) < 3) { hitId = e.id; break; }
               }
             }
 
-            networkRef.current?.shoot({
-              x: origin.x, y: eyeY, z: origin.z,
-              dx: fwd.x, dy: fwd.y, dz: fwd.z,
-              weapon: lp.weapon,
-              hitId,
-            });
-
+            networkRef.current?.shoot({ x: origin.x, y: eyeY, z: origin.z, dx: fwd.x, dy: fwd.y, dz: fwd.z, weapon: lp.weapon, hitId });
             renderer.renderMuzzleFlash(origin.x + fwd.x * 0.5, eyeY + fwd.y * 0.5, origin.z + fwd.z * 0.5);
             recoilRef.current = WEAPONS[lp.weapon].recoilY;
           }
 
           recoilRef.current *= 0.88;
-
           renderer.updateCamera(lp.position, lp.yaw, lp.pitch + recoilRef.current, inputRef.current.crouch);
           renderer.renderEnemies(enemyManagerRef.current.enemies, lp.team || 'CT');
         }
 
         const timeSinceLastSend = now - lastStateSendRef.current;
         if (timeSinceLastSend > 50 && lp) {
-          networkRef.current?.sendState({
-            x: lp.position.x, y: lp.position.y, z: lp.position.z,
-            yaw: lp.yaw, pitch: lp.pitch,
-            health: lp.health, armor: lp.armor, weapon: lp.weapon,
-            ammo: lp.ammo, isAlive: lp.alive,
-          });
+          networkRef.current?.sendState({ x: lp.position.x, y: lp.position.y, z: lp.position.z, yaw: lp.yaw, pitch: lp.pitch, health: lp.health, armor: lp.armor, weapon: lp.weapon, ammo: lp.ammo, isAlive: lp.alive });
           lastStateSendRef.current = now;
         }
 
@@ -259,7 +213,6 @@ export default function CSGamePage() {
       };
 
       requestAnimationFrame(gameLoop);
-
       return () => {
         running = false;
         document.removeEventListener('keydown', onKey);
@@ -276,21 +229,61 @@ export default function CSGamePage() {
 
     const cleanup = initRenderer();
     return () => { running = false; cleanup.then(fn => fn?.()); };
-  }, [gameStarted]);
+  }, [joined]);
 
   const handleCanvasClick = useCallback(() => {
-    if (!pointerLocked && alive) {
-      canvasRef.current?.requestPointerLock();
-    }
+    if (!pointerLocked && alive) canvasRef.current?.requestPointerLock();
   }, [pointerLocked, alive]);
+
+  if (!nickname) return null;
+
+  if (!teamSelect) {
+    return (
+      <div style={{
+        minHeight: '100vh', background: 'linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #0a0a0a 100%)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontFamily: 'monospace', color: '#fff',
+      }}>
+        <div style={{ textAlign: 'center' }}>
+          <h1 style={{ fontSize: 42, fontWeight: 900, color: '#ff6b6b', marginBottom: 8 }}>CS RESENHA</h1>
+          <p style={{ color: '#888', marginBottom: 32, fontSize: 14 }}>Escolha seu time para entrar na partida</p>
+          <div style={{ display: 'flex', gap: 16, justifyContent: 'center' }}>
+            <button onClick={() => handleTeamSelect('CT')} style={{
+              padding: '20px 48px', borderRadius: 12, border: '2px solid #4488ff',
+              background: 'rgba(68,136,255,0.15)', color: '#4488ff', cursor: 'pointer',
+              fontWeight: 'bold', fontSize: 20, transition: 'all 0.2s',
+            }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(68,136,255,0.3)'; e.currentTarget.style.transform = 'scale(1.05)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(68,136,255,0.15)'; e.currentTarget.style.transform = 'scale(1)'; }}
+            >
+              CT
+              <div style={{ fontSize: 11, color: '#666', marginTop: 6 }}>M4A1</div>
+            </button>
+            <button onClick={() => handleTeamSelect('T')} style={{
+              padding: '20px 48px', borderRadius: 12, border: '2px solid #ff6b35',
+              background: 'rgba(255,107,53,0.15)', color: '#ff6b35', cursor: 'pointer',
+              fontWeight: 'bold', fontSize: 20, transition: 'all 0.2s',
+            }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,107,53,0.3)'; e.currentTarget.style.transform = 'scale(1.05)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,107,53,0.15)'; e.currentTarget.style.transform = 'scale(1)'; }}
+            >
+              T
+              <div style={{ fontSize: 11, color: '#666', marginTop: 6 }}>AK-47</div>
+            </button>
+          </div>
+          <p style={{ color: '#555', marginTop: 24, fontSize: 12 }}>{nickname}</p>
+          <button onClick={() => router.push('/')} style={{
+            marginTop: 16, padding: '8px 20px', background: '#333', color: '#aaa',
+            border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 12,
+          }}>Voltar ao Hub</button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', background: '#000', position: 'relative' }}>
-      <HUD
-        room={room}
-        localPlayer={{ health: localHealth, armor: localArmor, ammo: localAmmo, weapon: localWeapon }}
-        killfeed={killfeed}
-      />
+      <HUD room={room} localPlayer={{ health: localHealth, armor: localArmor, ammo: localAmmo, weapon: localWeapon }} killfeed={killfeed} />
 
       {!pointerLocked && alive && gameStarted && (
         <div onClick={handleCanvasClick} style={{

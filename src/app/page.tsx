@@ -88,7 +88,7 @@ export default function Hub() {
       color: '#ff6b6b',
       borderColor: 'rgba(255,107,107,0.3)',
       hoverBorder: 'rgba(255,107,107,0.8)',
-      path: '/cs',
+      path: '/cs/game',
       badge: 'NOVO',
     },
     {

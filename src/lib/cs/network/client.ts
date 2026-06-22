@@ -4,13 +4,11 @@ import { CSPlayerState, CSRoomState, WeaponType } from '../types';
 export interface CSNetworkClient {
   socket: Socket;
   connect(url: string, nickname: string): void;
-  createRoom(team: 'CT' | 'T'): void;
-  joinRoom(code: string, team: 'CT' | 'T'): void;
-  leaveRoom(): void;
+  joinMatch(team: 'CT' | 'T'): void;
+  leaveMatch(): void;
   sendState(state: Partial<CSPlayerState>): void;
   shoot(data: { x: number; y: number; z: number; dx: number; dy: number; dz: number; weapon: WeaponType; hitId?: string }): void;
-  onRoomCreated(cb: (data: { code: string }) => void): void;
-  onRoomJoined(cb: (data: { room: CSRoomState; playerId: string }) => void): void;
+  onMatchJoined(cb: (data: { playerId: string; match: any; players: CSPlayerState[] }) => void): void;
   onPlayersUpdate(cb: (players: CSPlayerState[]) => void): void;
   onGameState(cb: (state: CSRoomState) => void): void;
   onPlayerDied(cb: (data: { victimId: string; killerId: string; headshot: boolean }) => void): void;
@@ -41,16 +39,12 @@ export function createCSNetworkClient(): CSNetworkClient {
     listeners.push(() => socket?.off(event, cb));
   }
 
-  function createRoom(team: 'CT' | 'T') {
-    socket?.emit('create_room', { team });
+  function joinMatch(team: 'CT' | 'T') {
+    socket?.emit('join_match', { team });
   }
 
-  function joinRoom(code: string, team: 'CT' | 'T') {
-    socket?.emit('join_room', { code, team });
-  }
-
-  function leaveRoom() {
-    socket?.emit('leave_room');
+  function leaveMatch() {
+    socket?.emit('disconnect');
   }
 
   function sendState(state: Partial<CSPlayerState>) {
@@ -61,8 +55,7 @@ export function createCSNetworkClient(): CSNetworkClient {
     socket?.emit('shoot', data);
   }
 
-  function onRoomCreated(cb: (data: { code: string }) => void) { on('room_created', cb); }
-  function onRoomJoined(cb: (data: { room: CSRoomState; playerId: string }) => void) { on('room_joined', cb); }
+  function onMatchJoined(cb: (data: { playerId: string; match: any; players: CSPlayerState[] }) => void) { on('match_joined', cb); }
   function onPlayersUpdate(cb: (players: CSPlayerState[]) => void) { on('players_update', cb); }
   function onGameState(cb: (state: CSRoomState) => void) { on('game_state', cb); }
   function onPlayerDied(cb: (data: { victimId: string; killerId: string; headshot: boolean }) => void) { on('player_died', cb); }
@@ -81,8 +74,8 @@ export function createCSNetworkClient(): CSNetworkClient {
 
   return {
     get socket() { return socket!; },
-    connect, createRoom, joinRoom, leaveRoom, sendState, shoot,
-    onRoomCreated, onRoomJoined, onPlayersUpdate, onGameState,
+    connect, joinMatch, leaveMatch, sendState, shoot,
+    onMatchJoined, onPlayersUpdate, onGameState,
     onPlayerDied, onRoundEnd, onMatchEnd, onBullet, onKillfeed,
     onCountdown, onError, disconnect,
   };
