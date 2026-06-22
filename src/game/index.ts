@@ -82,6 +82,7 @@ export default class Game {
   private weaponArms: THREE.Group | null = null;
   private recoilAmount = 0;
   private vehicleDataMap: Map<string, VehicleData> = new Map();
+  private vehicleTargetPos: Map<string, { x: number; y: number; z: number; rot: number }> = new Map();
   private currentWeaponModel = '';
   private muzzleFlash: THREE.Mesh | null = null;
   private muzzleFlashTimer = 0;
@@ -105,7 +106,7 @@ export default class Game {
   private init() {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x87CEEB);
-    this.scene.fog = new THREE.Fog(0x87CEEB, 350, 1500);
+    this.scene.fog = new THREE.Fog(350, 1500);
 
     this.camera = new THREE.PerspectiveCamera(75, this.container.clientWidth / this.container.clientHeight, 0.1, 2000);
     this.camera.position.set(0, this.cameraHeight, 5);
@@ -134,6 +135,218 @@ export default class Game {
     this.createWeaponArms();
     this.createCrosshair();
     this.setupEventListeners();
+    this.createTouchControls();
+  }
+
+  private isMobileDevice(): boolean {
+    return /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) 
+      || ('ontouchstart' in window && window.innerWidth < 1024);
+  }
+
+  private createTouchControls() {
+    if (this.isMobileDevice()) {
+      this.createJoystickLeft();
+      this.createJoystickRight();
+      this.createFireButton();
+    }
+  }
+
+  private createJoystickLeft() {
+    const joystick = document.createElement('div');
+    joystick.style.cssText = `
+      position: fixed;
+      bottom: 30px;
+      left: 30px;
+      width: 140px;
+      height: 140px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.15);
+      border: 2px solid rgba(255,255,255,0.3);
+      touch-action: none;
+      z-index: 100;
+      cursor: pointer;
+    `;
+    joystick.id = 'joystick-left';
+    document.body.appendChild(joystick);
+
+    let isActive = false;
+    let startX = 0, startY = 0;
+    let currentX = 0, currentZ = 0;
+
+    const onTouchStart = (e: TouchEvent) => {
+      isActive = true;
+      const touch = e.touches[0];
+      startX = touch.clientX - joystick.getBoundingClientRect().left;
+      startY = touch.clientY - joystick.getBoundingClientRect().top;
+      currentX = startX;
+      currentZ = startY;
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (!isActive) return;
+      e.preventDefault();
+      const touch = e.touches[0];
+      const rect = joystick.getBoundingClientRect();
+      currentX = touch.clientX - rect.left;
+      currentZ = touch.clientY - rect.top;
+
+      const centerX = rect.width / 2;
+      const centerZ = rect.height / 2;
+      const dx = currentX - centerX;
+      const dz = currentZ - centerZ;
+      const distance = Math.sqrt(dx * dx + dz * dz);
+      const maxDistance = Math.min(centerX, centerZ) - 10;
+      if (distance > maxDistance) {
+        const angle = Math.atan2(dz, dx);
+        currentX = centerX + Math.cos(angle) * maxDistance;
+        currentZ = centerZ + Math.sin(angle) * maxDistance;
+      }
+
+      joystick.style.background = 'radial-gradient(rgba(255,255,255,0.3) 0%, rgba(255,255,255,0.1) 80%)';
+      joystick.style.transform = `translate3d(${currentX - centerX}px, ${currentZ - centerZ}px, 0)`;
+
+      const angle = Math.atan2(dx, -dz);
+      const moveDir = angle + Math.PI / 2;
+      this.keys['KeyW'] = Math.cos(moveDir) < -0.1;
+      this.keys['KeyS'] = Math.cos(moveDir) > 0.1;
+      this.keys['KeyA'] = Math.sin(moveDir) < -0.1;
+      this.keys['KeyD'] = Math.sin(moveDir) > 0.1;
+    };
+
+    const onTouchEnd = () => {
+      isActive = false;
+      joystick.style.background = 'rgba(255,255,255,0.15)';
+      joystick.style.transform = 'translate3d(0px, 0px, 0)';
+      this.keys['KeyW'] = false;
+      this.keys['KeyS'] = false;
+      this.keys['KeyA'] = false;
+      this.keys['KeyD'] = false;
+    };
+
+    joystick.addEventListener('touchstart', onTouchStart, { passive: false });
+    joystick.addEventListener('touchmove', onTouchMove, { passive: false });
+    joystick.addEventListener('touchend', onTouchEnd);
+  }
+
+  private createJoystickRight() {
+    const joystick = document.createElement('div');
+    joystick.style.cssText = `
+      position: fixed;
+      bottom: 30px;
+      right: 30px;
+      width: 140px;
+      height: 140px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.1);
+      border: 2px solid rgba(255,255,255,0.3);
+      touch-action: none;
+      z-index: 100;
+      cursor: pointer;
+    `;
+    joystick.id = 'joystick-right';
+    document.body.appendChild(joystick);
+
+    let isActive = false;
+    let startX = 0, startY = 0;
+    let currentX = 0, currentZ = 0;
+
+    const onTouchStart = (e: TouchEvent) => {
+      isActive = true;
+      const touch = e.touches[0];
+      startX = touch.clientX - joystick.getBoundingClientRect().left;
+      startY = touch.clientY - joystick.getBoundingClientRect().top;
+      currentX = startX;
+      currentZ = startY;
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (!isActive) return;
+      e.preventDefault();
+      const touch = e.touches[0];
+      const rect = joystick.getBoundingClientRect();
+      currentX = touch.clientX - rect.left;
+      currentZ = touch.clientY - rect.top;
+
+      const centerX = rect.width / 2;
+      const centerZ = rect.height / 2;
+      const dx = currentX - centerX;
+      const dz = currentZ - centerZ;
+      const distance = Math.sqrt(dx * dx + dz * dz);
+      const maxDistance = Math.min(centerX, centerZ) - 10;
+      if (distance > maxDistance) {
+        const angle = Math.atan2(dz, dx);
+        currentX = centerX + Math.cos(angle) * maxDistance;
+        currentZ = centerZ + Math.sin(angle) * maxDistance;
+      }
+
+      joystick.style.background = 'radial-gradient(rgba(255,255,255,0.3) 0%, rgba(255,255,255,0.1) 80%)';
+      joystick.style.transform = `translate3d(${currentX - centerX}px, ${currentZ - centerZ}px, 0)`;
+
+      const angle = Math.atan2(dx, -dz);
+      const moveDir = angle + Math.PI / 2;
+      if (Math.sin(moveDir) < -0.1) this.keys['KeyW'] = true;
+      if (Math.sin(moveDir) > 0.1) this.keys['KeyS'] = true;
+      if (Math.cos(moveDir) < -0.1) this.keys['KeyA'] = true;
+      if (Math.cos(moveDir) > 0.1) this.keys['KeyD'] = true;
+    };
+
+    const onTouchEnd = () => {
+      isActive = false;
+      joystick.style.background = 'rgba(255,255,255,0.1)';
+      joystick.style.transform = 'translate3d(0px, 0px, 0)';
+    };
+
+    joystick.addEventListener('touchstart', onTouchStart, { passive: false });
+    joystick.addEventListener('touchmove', onTouchMove, { passive: false });
+    joystick.addEventListener('touchend', onTouchEnd);
+  }
+
+  private createFireButton() {
+    const button = document.createElement('div');
+    button.innerHTML = '🔫';
+    button.style.cssText = `
+      position: fixed;
+      right: 30px;
+      bottom: 200px;
+      width: 70px;
+      height: 70px;
+      border-radius: 50%;
+      background: rgba(255,0,0,0.4);
+      border: 2px solid rgba(255,255,255,0.5);
+      color: white;
+      font-size: 24px;
+      font-weight: bold;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      user-select: none;
+      touch-action: manipulation;
+      z-index: 100;
+    `;
+    button.id = 'fire-button';
+    document.body.appendChild(button);
+
+    let isPressed = false;
+    const onTouchStart = () => {
+      if (isPressed) return;
+      isPressed = true;
+      button.style.background = 'rgba(255,0,0,0.7)';
+      button.style.transform = 'scale(0.9)';
+      if (this.state === 'playing' && this.playerData && !this.playerData.inVehicle) {
+        this.shoot();
+      }
+    };
+
+    const onTouchEnd = () => {
+      if (!isPressed) return;
+      isPressed = false;
+      button.style.background = 'rgba(255,0,0,0.4)';
+      button.style.transform = 'scale(1)';
+    };
+
+    button.addEventListener('touchstart', onTouchStart, { passive: false });
+    button.addEventListener('touchend', onTouchEnd);
   }
 
   private createWeaponArms() {
@@ -318,6 +531,7 @@ export default class Game {
       this.weapons = data.weapons;
       this.worldSize = data.worldSize;
       this.shopItems = data.shopItems || [];
+      console.log('[GTA] Welcome received. shopItems:', this.shopItems.length, this.shopItems);
       this.state = 'playing';
       this.onStateChange?.('playing');
       this.setupWorld(data.vehicles, data.houses);
@@ -389,7 +603,13 @@ export default class Game {
         vehicle.z = corrected.z;
       }
       this.vehicleDataMap.set(vehicle.id, vehicle);
-      this.updateVehicle3D(vehicle);
+      const existing = this.vehicles3D.get(vehicle.id);
+      if (existing) {
+        this.vehicleTargetPos.set(vehicle.id, { x: vehicle.x, y: vehicle.y, z: vehicle.z, rot: vehicle.rotation });
+      } else {
+        this.createVehicle3D(vehicle);
+        this.vehicleTargetPos.set(vehicle.id, { x: vehicle.x, y: vehicle.y, z: vehicle.z, rot: vehicle.rotation });
+      }
     });
 
     this.socket.on('projectiles_update', (projectiles: { id: string; x: number; y: number; z: number }[]) => {
@@ -980,11 +1200,11 @@ export default class Game {
   private updateVehicle3D(vehicle: VehicleData) {
     const existing = this.vehicles3D.get(vehicle.id);
     if (existing) {
-      existing.position.set(vehicle.x, vehicle.y, vehicle.z);
-      existing.rotation.y = vehicle.rotation;
+      this.vehicleTargetPos.set(vehicle.id, { x: vehicle.x, y: vehicle.y, z: vehicle.z, rot: vehicle.rotation });
       return;
     }
     this.createVehicle3D(vehicle);
+    this.vehicleTargetPos.set(vehicle.id, { x: vehicle.x, y: vehicle.y, z: vehicle.z, rot: vehicle.rotation });
   }
 
   private updateProjectiles3D(projectiles: { id: string; x: number; y: number; z: number }[]) {
@@ -1111,6 +1331,8 @@ export default class Game {
     eHint.id = 'e-hint';
     eHint.textContent = 'Pressione E para entrar no veiculo';
     document.body.appendChild(eHint);
+
+    this.createTouchControls();
   }
 
   private switchWeapon(weapon: string) {
@@ -1133,8 +1355,8 @@ export default class Game {
     if (this.playerData.ammo <= 0) return;
 
     this.lastShot = now;
-    const dir = new THREE.Vector3();
-    this.camera.getWorldDirection(dir);
+    const dir = new THREE.Vector3(0, 0, -1);
+    dir.applyQuaternion(this.camera.quaternion);
 
     const spread = weapon.spread;
     if (spread > 0) {
@@ -1230,9 +1452,25 @@ export default class Game {
       this.animateDeathCamera(delta);
     }
 
+    this.updateVehicleLerp(delta);
     this.updatePlayerHealthBars();
     this.renderer.render(this.scene, this.camera);
   };
+
+  private updateVehicleLerp(delta: number) {
+    const lerpFactor = Math.min(1, delta * 10);
+    for (const [id, target] of this.vehicleTargetPos) {
+      const mesh = this.vehicles3D.get(id);
+      if (!mesh) continue;
+      mesh.position.x += (target.x - mesh.position.x) * lerpFactor;
+      mesh.position.y += (target.y - mesh.position.y) * lerpFactor;
+      mesh.position.z += (target.z - mesh.position.z) * lerpFactor;
+      let rotDiff = target.rot - mesh.rotation.y;
+      while (rotDiff > Math.PI) rotDiff -= Math.PI * 2;
+      while (rotDiff < -Math.PI) rotDiff += Math.PI * 2;
+      mesh.rotation.y += rotDiff * lerpFactor;
+    }
+  }
 
   private handlePlayerInput(delta: number) {
     if (!this.playerData || !this.camera) return;
@@ -1446,6 +1684,10 @@ export default class Game {
   }
 
   private openShop() {
+    console.log('[GTA] openShop called. shopItems:', this.shopItems.length, 'shopOpen:', this.shopOpen);
+    if (this.shopItems.length === 0) {
+      console.warn('[GTA] No shop items available!');
+    }
     this.shopOpen = true;
     if (document.pointerLockElement) document.exitPointerLock();
 
@@ -1454,7 +1696,9 @@ export default class Game {
 
     const overlay = document.createElement('div');
     overlay.id = 'resenha5-shop';
-    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:60;display:flex;align-items:center;justify-content:center;font-family:Arial,sans-serif;';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:60;display:flex;align-items:center;justify-content:center;font-family:Arial,sans-serif;pointer-events:auto;';
+    overlay.tabIndex = 0;
+    overlay.focus();
 
     const categories = [
       { key: 'arma', label: 'Armas', icon: '🔫' },
@@ -1558,5 +1802,11 @@ export default class Game {
     if (this.wastedOverlay) this.wastedOverlay.remove();
     const shop = document.getElementById('resenha5-shop');
     if (shop) shop.remove();
+    this.vehicleTargetPos.clear();
+    this.vehicles3D.clear();
+    this.players3D.clear();
+    this.projectiles3D.clear();
+    this.houses3D.clear();
+    this.vehicleDataMap.clear();
   }
 }
