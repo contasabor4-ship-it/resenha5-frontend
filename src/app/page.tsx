@@ -82,6 +82,16 @@ export default function Hub() {
 
   const games = [
     {
+      name: 'CS Resenha',
+      emoji: '🔫',
+      desc: 'Counter-Strike estilo Resenha! Team Deathmatch no Dust2. AK-47 vs M4A1.',
+      color: '#ff6b6b',
+      borderColor: 'rgba(255,107,107,0.3)',
+      hoverBorder: 'rgba(255,107,107,0.8)',
+      path: '/cs',
+      badge: 'NOVO',
+    },
+    {
       name: 'Gartic',
       emoji: '🎨',
       desc: 'Desenhe, adivinhe e se divirta! Modo classico de desenhar e adivinhar frases.',
@@ -123,13 +133,22 @@ export default function Hub() {
           <button onClick={handleLogout} style={{ padding: '6px 16px', background: '#333', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Sair</button>
         </div>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px', maxWidth: '900px', width: '100%' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '24px', maxWidth: '1000px', width: '100%' }}>
         {games.map((game) => (
           <div key={game.name} onClick={() => { if (!game.disabled && game.path) router.push(game.path); }} style={{ background: 'rgba(20,20,30,0.9)', padding: '30px', borderRadius: '16px', border: `1px solid ${game.borderColor}`, cursor: game.disabled ? 'default' : 'pointer', textAlign: 'center', transition: 'transform 0.2s, border-color 0.2s', opacity: game.disabled ? 0.5 : 1 }}
             onMouseEnter={e => { if (!game.disabled) { (e.currentTarget as HTMLDivElement).style.transform = 'scale(1.02)'; (e.currentTarget as HTMLDivElement).style.borderColor = game.hoverBorder; }}}
             onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.transform = 'scale(1)'; (e.currentTarget as HTMLDivElement).style.borderColor = game.borderColor; }}
           >
-            <div style={{ fontSize: '48px', marginBottom: '12px' }}>{game.emoji}</div>
+            <div style={{ position: 'relative', display: 'inline-block' }}>
+              <div style={{ fontSize: '48px', marginBottom: '12px' }}>{game.emoji}</div>
+              {game.badge && (
+                <span style={{
+                  position: 'absolute', top: -4, right: -16,
+                  background: '#ff6b6b', color: '#fff', fontSize: 10,
+                  padding: '2px 6px', borderRadius: 4, fontWeight: 'bold',
+                }}>{game.badge}</span>
+              )}
+            </div>
             <h2 style={{ fontSize: '22px', color: game.color, marginBottom: '8px' }}>{game.name}</h2>
             <p style={{ color: '#888', fontSize: '13px' }}>{game.desc}</p>
             {game.disabled && <p style={{ color: '#ff6b6b', fontSize: '12px', marginTop: '8px', fontWeight: 'bold' }}>Em Desenvolvimento</p>}
