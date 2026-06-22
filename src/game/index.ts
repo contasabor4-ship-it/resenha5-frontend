@@ -605,8 +605,7 @@ export default class Game {
           this.vehicleTargetPos.set(vehicle.id, { x: vehicle.x, y: vehicle.y, z: vehicle.z, rot: vehicle.rotation });
         }
       } else {
-        this.createVehicle3D(vehicle);
-        this.vehicleTargetPos.set(vehicle.id, { x: vehicle.x, y: vehicle.y, z: vehicle.z, rot: vehicle.rotation });
+        this.updateVehicle3D(vehicle);
       }
     });
 
@@ -619,8 +618,7 @@ export default class Game {
             this.vehicleTargetPos.set(vehicle.id, { x: vehicle.x, y: vehicle.y, z: vehicle.z, rot: vehicle.rotation });
           }
         } else {
-          this.createVehicle3D(vehicle);
-          this.vehicleTargetPos.set(vehicle.id, { x: vehicle.x, y: vehicle.y, z: vehicle.z, rot: vehicle.rotation });
+          this.updateVehicle3D(vehicle);
         }
       }
     });
@@ -849,6 +847,158 @@ export default class Game {
     this.playerData!.y = 0;
   }
 
+
+  private createVehicle3D(vehicle: VehicleData) {
+    const group = new THREE.Group();
+    const bodyMat = new THREE.MeshLambertMaterial({ color: vehicle.color });
+    const glassMat = new THREE.MeshLambertMaterial({ color: 0x87CEEB, transparent: true, opacity: 0.4 });
+    const chromeMat = new THREE.MeshLambertMaterial({ color: 0xcccccc });
+    const blackMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
+    const headlightMat = new THREE.MeshBasicMaterial({ color: 0xffffaa });
+
+    const wheelGeo = new THREE.CylinderGeometry(0.28, 0.28, 0.18, 10);
+
+    const addWheels = (positions: number[][]) => {
+      for (const [wx, wy, wz] of positions) {
+        const wheel = new THREE.Mesh(wheelGeo, blackMat);
+        wheel.position.set(wx, wy, wz);
+        wheel.rotation.z = Math.PI / 2;
+        group.add(wheel);
+        const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.19, 8), chromeMat);
+        hub.position.set(wx, wy, wz);
+        hub.rotation.z = Math.PI / 2;
+        group.add(hub);
+      }
+    };
+
+    const addHeadlights = (z: number) => {
+      for (const side of [-0.7, 0.7]) {
+        const hl = new THREE.Mesh(new THREE.SphereGeometry(0.08, 6, 6), headlightMat);
+        hl.position.set(side, 0.45, z);
+        group.add(hl);
+      }
+    };
+
+    const addTailights = (z: number) => {
+      for (const side of [-0.7, 0.7]) {
+        const tl = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 6), new THREE.MeshBasicMaterial({ color: 0xff0000 }));
+        tl.position.set(side, 0.45, z);
+        group.add(tl);
+      }
+    };
+
+    const addBumper = (z: number) => {
+      const bumper = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.12, 0.1), chromeMat);
+      bumper.position.set(0, 0.2, z);
+      group.add(bumper);
+    };
+
+    const model = vehicle.model;
+
+    if (model === 'Sedan') {
+      const body = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.5, 4.2), bodyMat);
+      body.position.y = 0.45; body.castShadow = true; group.add(body);
+      const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.5, 2.0), glassMat);
+      cabin.position.set(0, 0.95, -0.2); group.add(cabin);
+      const trunk = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.35, 1.0), bodyMat);
+      trunk.position.set(0, 0.8, 1.2); group.add(trunk);
+      addWheels([[-0.85, 0.28, 1.2], [0.85, 0.28, 1.2], [-0.85, 0.28, -1.2], [0.85, 0.28, -1.2]]);
+      addHeadlights(-2.1); addTailights(2.1); addBumper(-2.15); addBumper(2.15);
+    } else if (model === 'SUV') {
+      const body = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.7, 4.2), bodyMat);
+      body.position.y = 0.55; body.castShadow = true; group.add(body);
+      const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.6, 2.6), glassMat);
+      cabin.position.set(0, 1.15, -0.1); group.add(cabin);
+      const roofRail = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.06, 2.4), blackMat);
+      roofRail.position.set(0, 1.48, -0.1); group.add(roofRail);
+      addWheels([[-0.9, 0.32, 1.3], [0.9, 0.32, 1.3], [-0.9, 0.32, -1.3], [0.9, 0.32, -1.3]]);
+      addHeadlights(-2.1); addTailights(2.1); addBumper(-2.15); addBumper(2.15);
+      const step = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.08, 0.6), blackMat);
+      step.position.set(0, 0.16, 0); group.add(step);
+    } else if (model === 'Sports') {
+      const body = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.35, 4.0), bodyMat);
+      body.position.y = 0.35; body.castShadow = true; group.add(body);
+      const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.35, 1.5), glassMat);
+      cabin.position.set(0, 0.7, -0.3); group.add(cabin);
+      const hood = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.15, 1.2), bodyMat);
+      hood.position.set(0, 0.55, -1.2); hood.rotation.x = -0.1; group.add(hood);
+      const spoiler = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.04, 0.2), blackMat);
+      spoiler.position.set(0, 0.85, 1.8); group.add(spoiler);
+      const spoilerStand1 = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.2, 0.05), blackMat);
+      spoilerStand1.position.set(-0.5, 0.75, 1.8); group.add(spoilerStand1);
+      const spoilerStand2 = spoilerStand1.clone(); spoilerStand2.position.x = 0.5; group.add(spoilerStand2);
+      addWheels([[-0.8, 0.28, 1.1], [0.8, 0.28, 1.1], [-0.8, 0.28, -1.1], [0.8, 0.28, -1.1]]);
+      addHeadlights(-2.0); addTailights(2.0);
+    } else if (model === 'Truck') {
+      const cabin = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.8, 2.0), bodyMat);
+      cabin.position.set(0, 0.65, -1.0); cabin.castShadow = true; group.add(cabin);
+      const cabinRoof = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.2, 1.8), bodyMat);
+      cabinRoof.position.set(0, 1.15, -1.0); group.add(cabinRoof);
+      const bed = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.5, 2.2), new THREE.MeshLambertMaterial({ color: 0x555555 }));
+      bed.position.set(0, 0.4, 1.1); group.add(bed);
+      const bedRail1 = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.4, 2.2), blackMat);
+      bedRail1.position.set(-0.95, 0.85, 1.1); group.add(bedRail1);
+      const bedRail2 = bedRail1.clone(); bedRail2.position.x = 0.95; group.add(bedRail2);
+      const bedBack = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.35, 0.06), blackMat);
+      bedBack.position.set(0, 0.8, 2.2); group.add(bedBack);
+      addWheels([[-1.0, 0.35, 1.2], [1.0, 0.35, 1.2], [-1.0, 0.35, -1.0], [1.0, 0.35, -1.0]]);
+      addHeadlights(-2.0); addTailights(2.2); addBumper(-2.05);
+    } else if (model === 'Muscle') {
+      const body = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.5, 4.2), bodyMat);
+      body.position.y = 0.45; body.castShadow = true; group.add(body);
+      const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.45, 1.6), glassMat);
+      cabin.position.set(0, 0.9, -0.2); group.add(cabin);
+      const hood2 = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.15, 1.5), bodyMat);
+      hood2.position.set(0, 0.75, -1.2); group.add(hood2);
+      const scoop = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.12, 0.4), blackMat);
+      scoop.position.set(0, 0.88, -1.0); group.add(scoop);
+      const stripe1 = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.01, 4.2), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+      stripe1.position.set(-0.3, 0.71, 0); group.add(stripe1);
+      const stripe2 = stripe1.clone(); stripe2.position.x = 0.3; group.add(stripe2);
+      addWheels([[-0.9, 0.28, 1.2], [0.9, 0.28, 1.2], [-0.9, 0.28, -1.2], [0.9, 0.28, -1.2]]);
+      addHeadlights(-2.1); addTailights(2.1); addBumper(-2.15); addBumper(2.15);
+    } else if (model === 'Coupe') {
+      const body = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.4, 3.6), bodyMat);
+      body.position.y = 0.4; body.castShadow = true; group.add(body);
+      const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.4, 1.4), glassMat);
+      cabin.position.set(0, 0.8, -0.1); group.add(cabin);
+      const roof2 = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.08, 1.6), bodyMat);
+      roof2.position.set(0, 1.02, -0.1); group.add(roof2);
+      addWheels([[-0.8, 0.26, 1.0], [0.8, 0.26, 1.0], [-0.8, 0.26, -1.0], [0.8, 0.26, -1.0]]);
+      addHeadlights(-1.8); addTailights(1.8); addBumper(-1.85); addBumper(1.85);
+    } else if (model === 'Pickup') {
+      const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.6, 1.8), bodyMat);
+      cabin.position.set(0, 0.55, -1.2); cabin.castShadow = true; group.add(cabin);
+      const cabinRoof = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.12, 1.6), bodyMat);
+      cabinRoof.position.set(0, 0.91, -1.2); group.add(cabinRoof);
+      const bed = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.4, 2.0), new THREE.MeshLambertMaterial({ color: 0x555555 }));
+      bed.position.set(0, 0.35, 0.8); group.add(bed);
+      const rail1 = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.35, 2.0), blackMat);
+      rail1.position.set(-0.85, 0.72, 0.8); group.add(rail1);
+      const rail2 = rail1.clone(); rail2.position.x = 0.85; group.add(rail2);
+      addWheels([[-0.9, 0.3, 1.3], [0.9, 0.3, 1.3], [-0.9, 0.3, -1.2], [0.9, 0.3, -1.2]]);
+      addHeadlights(-2.1); addTailights(1.8); addBumper(-2.15);
+    } else if (model === 'Van') {
+      const body = new THREE.Mesh(new THREE.BoxGeometry(2.0, 1.1, 4.5), bodyMat);
+      body.position.y = 0.75; body.castShadow = true; group.add(body);
+      const roof = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.08, 4.3), bodyMat);
+      roof.position.set(0, 1.34, 0); group.add(roof);
+      const windshield = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.5, 0.05), glassMat);
+      windshield.position.set(0, 0.85, -2.25); group.add(windshield);
+      addWheels([[-0.9, 0.3, 1.5], [0.9, 0.3, 1.5], [-0.9, 0.3, -1.5], [0.9, 0.3, -1.5]]);
+      addHeadlights(-2.25); addTailights(2.25); addBumper(-2.3); addBumper(2.3);
+    }
+
+    for (const side of [-0.95, 0.95]) {
+      const mirror = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.06, 0.12), blackMat);
+      mirror.position.set(side, 0.8, -0.5); group.add(mirror);
+    }
+
+    group.position.set(vehicle.x, vehicle.y, vehicle.z);
+    group.rotation.y = vehicle.rotation;
+    this.scene.add(group);
+    this.vehicles3D.set(vehicle.id, group);
+  }
 
   private updateVehicle3D(vehicle: VehicleData) {
     const existing = this.vehicles3D.get(vehicle.id);
