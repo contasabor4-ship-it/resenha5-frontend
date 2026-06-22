@@ -5,6 +5,9 @@ import * as THREE from 'three';
 import { createCSNetworkClient } from '../../../lib/cs/network/client';
 import { WeaponType, WEAPONS } from '../../../lib/cs/types';
 import { DUST2 } from '../../../lib/cs/maps/dust2';
+import { createCSRenderer } from '../../../lib/cs/engine/renderer';
+import { createLocalPlayer, updateLocalPlayer } from '../../../lib/cs/engine/player';
+import { createEnemyManager } from '../../../lib/cs/engine/enemies';
 
 const CS_SERVER_URL = process.env.NEXT_PUBLIC_CS_SERVER_URL || process.env.NEXT_PUBLIC_GAME_SERVER_URL || '';
 
@@ -38,7 +41,6 @@ export default function CSGamePage() {
   const plLockedRef = useRef(false);
   const gameRunningRef = useRef(false);
   const lastShotRef = useRef(0);
-  const updateLocalPlayerRef = useRef<any>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem('r5_nickname');
@@ -48,161 +50,153 @@ export default function CSGamePage() {
 
   useEffect(() => { plLockedRef.current = pointerLocked; }, [pointerLocked]);
 
-  const startGame = useCallback(async (selectedTeam: 'CT' | 'T') => {
+  useEffect(() => {
+    return () => {
+      gameRunningRef.current = false;
+      netRef.current?.disconnect();
+      rendererRef.current?.dispose();
+    };
+  }, []);
+
+  const startGame = useCallback((selectedTeam: 'CT' | 'T') => {
     setTeam(selectedTeam);
     setStatus('connecting');
 
-    const { createCSRenderer } = await import('../../../lib/cs/engine/renderer');
-    const { createLocalPlayer, updateLocalPlayer } = await import('../../../lib/cs/engine/player');
-    const { createEnemyManager } = await import('../../../lib/cs/engine/enemies');
-
-    updateLocalPlayerRef.current = updateLocalPlayer;
-
-    const renderer = createCSRenderer();
-    if (canvasRef.current) {
-      renderer.init(canvasRef.current);
-    }
-    renderer.buildMap(DUST2);
-    renderer.switchWeapon(selectedTeam === 'CT' ? 'm4a1' : 'ak47');
-    rendererRef.current = renderer;
-    (window as any).__csRenderer = renderer;
-
-    const defaultWeapon: WeaponType = selectedTeam === 'CT' ? 'm4a1' : 'ak47';
-    const spawn = selectedTeam === 'CT' ? DUST2.spawnCT : DUST2.spawnT;
-    const lp = createLocalPlayer(spawn, selectedTeam);
-    lpRef.current = lp;
-    enemiesRef.current = createEnemyManager();
-
-    setWeapon(defaultWeapon);
-    setAmmo(WEAPONS[defaultWeapon].ammo);
-    setHealth(100);
-    setArmor(0);
-
-    const net = createCSNetworkClient();
-    netRef.current = net;
-
-    net.onMatchJoined((data: any) => {
-      const me = data.players.find((p: any) => p.id === data.playerId);
-      if (me) {
-        lp.position.x = me.x; lp.position.y = me.y; lp.position.z = me.z;
-        lp.health = me.health; lp.weapon = me.weapon; lp.ammo = me.ammo;
-        lp.team = me.team;
-        setHealth(me.health); setAmmo(me.ammo); setWeapon(me.weapon);
+    try {
+      const renderer = createCSRenderer();
+      if (canvasRef.current) {
+        renderer.init(canvasRef.current);
+      } else {
+        console.error('Canvas ref is null');
       }
-      setRound(data.match.round || 0);
-      setMaxRounds(data.match.maxRounds || 15);
-      setCtScore(data.match.ctScore || 0);
-      setTScore(data.match.tScore || 0);
-      setTimeLeft(data.match.timeLeft || 0);
+      renderer.buildMap(DUST2);
+      renderer.switchWeapon(selectedTeam === 'CT' ? 'm4a1' : 'ak47');
+      rendererRef.current = renderer;
 
-      if (data.match.phase === 'playing') {
+      const spawn = selectedTeam === 'CT' ? DUST2.spawnCT : DUST2.spawnT;
+      const lp = createLocalPlayer(spawn, selectedTeam);
+      lpRef.current = lp;
+      enemiesRef.current = createEnemyManager();
+
+      setWeapon(selectedTeam === 'CT' ? 'm4a1' : 'ak47');
+      setAmmo(WEAPONS[selectedTeam === 'CT' ? 'm4a1' : 'ak47'].ammo);
+      setHealth(100);
+      setArmor(0);
+
+      const net = createCSNetworkClient();
+      netRef.current = net;
+
+      net.onMatchJoined((data: any) => {
+        console.log('CS: match_joined received', data);
+        const me = data.players.find((p: any) => p.id === data.playerId);
+        if (me) {
+          lp.position.x = me.x; lp.position.y = me.y; lp.position.z = me.z;
+          lp.health = me.health; lp.weapon = me.weapon; lp.ammo = me.ammo;
+          lp.team = me.team;
+          setHealth(me.health); setAmmo(me.ammo); setWeapon(me.weapon);
+        }
+        setRound(data.match.round || 0);
+        setMaxRounds(data.match.maxRounds || 15);
+        setCtScore(data.match.ctScore || 0);
+        setTScore(data.match.tScore || 0);
+        setTimeLeft(data.match.timeLeft || 0);
         setStatus('playing');
         setIsAlive(true);
-      } else {
-        setStatus('playing');
-      }
-    });
+      });
 
-    net.onPlayersUpdate((players: any[]) => {
-      const myId = net.socket?.id;
-      enemiesRef.current.update(players.filter((p: any) => p.id !== myId));
-      const me = players.find((p: any) => p.id === myId);
-      if (me) {
-        setIsAlive(me.isAlive);
-        if (me.isAlive) {
-          setHealth(me.health); setAmmo(me.ammo); setWeapon(me.weapon); setArmor(me.armor);
+      net.onPlayersUpdate((players: any[]) => {
+        const myId = net.socket?.id;
+        enemiesRef.current.update(players.filter((p: any) => p.id !== myId));
+        const me = players.find((p: any) => p.id === myId);
+        if (me) {
+          setIsAlive(me.isAlive);
+          if (me.isAlive) { setHealth(me.health); setAmmo(me.ammo); setWeapon(me.weapon); setArmor(me.armor); }
         }
-      }
-    });
+      });
 
-    net.onGameState((state: any) => {
-      setRound(state.round); setMaxRounds(state.maxRounds);
-      setCtScore(state.ctScore); setTScore(state.tScore);
-      setTimeLeft(state.timeLeft);
-    });
+      net.onGameState((state: any) => {
+        setRound(state.round); setMaxRounds(state.maxRounds);
+        setCtScore(state.ctScore); setTScore(state.tScore);
+        setTimeLeft(state.timeLeft);
+      });
 
-    net.onBullet((data: any) => rendererRef.current?.renderBullet(data));
-    net.onKillfeed((data: any) => setKillfeed(prev => [data, ...prev].slice(0, 5)));
-    net.onPlayerDied((data: any) => { if (data.victimId === net.socket?.id) setIsAlive(false); });
+      net.onBullet((data: any) => rendererRef.current?.renderBullet(data));
+      net.onKillfeed((data: any) => setKillfeed(prev => [data, ...prev].slice(0, 5)));
+      net.onPlayerDied((data: any) => { if (data.victimId === net.socket?.id) setIsAlive(false); });
 
-    net.onCountdown((data: any) => {
-      setCountdown(data.seconds);
-      if (data.seconds <= 0) { setCountdown(null); setStatus('playing'); setIsAlive(true); }
-    });
+      net.onCountdown((data: any) => {
+        setCountdown(data.seconds);
+        if (data.seconds <= 0) { setCountdown(null); setStatus('playing'); setIsAlive(true); }
+      });
 
-    net.onRoundEnd((data: any) => {
-      setCtScore(data.ctScore); setTScore(data.tScore); setRound(data.round);
-    });
+      net.onRoundEnd((data: any) => {
+        setCtScore(data.ctScore); setTScore(data.tScore); setRound(data.round);
+      });
 
-    net.onMatchEnd((data: any) => {
-      setCtScore(data.ctScore); setTScore(data.tScore);
+      net.onMatchEnd((data: any) => {
+        setCtScore(data.ctScore); setTScore(data.tScore);
+        setStatus('team_select');
+        gameRunningRef.current = false;
+        net.disconnect();
+        rendererRef.current?.dispose();
+      });
+
+      net.onError((msg: string) => {
+        console.error('CS error:', msg);
+        setStatus('team_select');
+      });
+
+      net.connect(CS_SERVER_URL, nickname);
+      console.log('CS: connecting to', CS_SERVER_URL);
+
+      setTimeout(() => {
+        console.log('CS: sending join_match', selectedTeam);
+        net.joinMatch(selectedTeam);
+      }, 1000);
+
+      gameRunningRef.current = true;
+      requestAnimationFrame(gameLoop);
+
+      const onKey = (e: KeyboardEvent) => {
+        const down = e.type === 'keydown';
+        const i = inputRef.current;
+        switch (e.code) {
+          case 'KeyW': i.forward = down; break;
+          case 'KeyS': i.backward = down; break;
+          case 'KeyA': i.left = down; break;
+          case 'KeyD': i.right = down; break;
+          case 'Space': i.jump = down; break;
+          case 'ControlLeft': i.crouch = down; break;
+          case 'ShiftLeft': i.sprint = down; break;
+          case 'Digit1': i.weapon = 'knife'; break;
+          case 'Digit2': i.weapon = selectedTeam === 'CT' ? 'm4a1' : 'ak47'; break;
+          case 'Digit3': i.weapon = 'deagle'; break;
+        }
+      };
+
+      const onMouse = (e: MouseEvent) => {
+        if (!plLockedRef.current) return;
+        inputRef.current.yaw -= e.movementX * 0.002;
+        inputRef.current.pitch = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, inputRef.current.pitch - e.movementY * 0.002));
+      };
+
+      const onMouseDown = (e: MouseEvent) => { if (e.button === 0) inputRef.current.shooting = true; };
+      const onMouseUp = (e: MouseEvent) => { if (e.button === 0) inputRef.current.shooting = false; };
+      const onPtrLock = () => setPointerLocked(!!document.pointerLockElement);
+      const onResize = () => renderer.resize();
+
+      document.addEventListener('keydown', onKey);
+      document.addEventListener('keyup', onKey);
+      document.addEventListener('mousemove', onMouse);
+      document.addEventListener('mousedown', onMouseDown);
+      document.addEventListener('mouseup', onMouseUp);
+      document.addEventListener('pointerlockchange', onPtrLock);
+      window.addEventListener('resize', onResize);
+
+    } catch (err) {
+      console.error('CS: startGame error', err);
       setStatus('team_select');
-      gameRunningRef.current = false;
-      net.disconnect();
-      rendererRef.current?.dispose();
-      (window as any).__csRenderer = null;
-    });
-
-    net.onError((msg: string) => {
-      console.error('CS error:', msg);
-      setStatus('team_select');
-    });
-
-    net.connect(CS_SERVER_URL, nickname);
-    setTimeout(() => net.joinMatch(selectedTeam), 500);
-
-    gameRunningRef.current = true;
-    requestAnimationFrame(gameLoop);
-
-    const onKey = (e: KeyboardEvent) => {
-      const down = e.type === 'keydown';
-      const i = inputRef.current;
-      switch (e.code) {
-        case 'KeyW': i.forward = down; break;
-        case 'KeyS': i.backward = down; break;
-        case 'KeyA': i.left = down; break;
-        case 'KeyD': i.right = down; break;
-        case 'Space': i.jump = down; break;
-        case 'ControlLeft': i.crouch = down; break;
-        case 'ShiftLeft': i.sprint = down; break;
-        case 'Digit1': i.weapon = 'knife'; break;
-        case 'Digit2': i.weapon = selectedTeam === 'CT' ? 'm4a1' : 'ak47'; break;
-        case 'Digit3': i.weapon = 'deagle'; break;
-      }
-    };
-
-    const onMouse = (e: MouseEvent) => {
-      if (!plLockedRef.current) return;
-      inputRef.current.yaw -= e.movementX * 0.002;
-      inputRef.current.pitch = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, inputRef.current.pitch - e.movementY * 0.002));
-    };
-
-    const onMouseDown = (e: MouseEvent) => { if (e.button === 0) inputRef.current.shooting = true; };
-    const onMouseUp = (e: MouseEvent) => { if (e.button === 0) inputRef.current.shooting = false; };
-    const onPtrLock = () => setPointerLocked(!!document.pointerLockElement);
-    const onResize = () => renderer.resize();
-
-    document.addEventListener('keydown', onKey);
-    document.addEventListener('keyup', onKey);
-    document.addEventListener('mousemove', onMouse);
-    document.addEventListener('mousedown', onMouseDown);
-    document.addEventListener('mouseup', onMouseUp);
-    document.addEventListener('pointerlockchange', onPtrLock);
-    window.addEventListener('resize', onResize);
-
-    (window as any).__csCleanup = () => {
-      gameRunningRef.current = false;
-      document.removeEventListener('keydown', onKey);
-      document.removeEventListener('keyup', onKey);
-      document.removeEventListener('mousemove', onMouse);
-      document.removeEventListener('mousedown', onMouseDown);
-      document.removeEventListener('mouseup', onMouseUp);
-      document.removeEventListener('pointerlockchange', onPtrLock);
-      window.removeEventListener('resize', onResize);
-      renderer.dispose();
-      net.disconnect();
-      (window as any).__csRenderer = null;
-    };
+    }
   }, [nickname]);
 
   function gameLoop() {
@@ -220,10 +214,7 @@ export default function CSGamePage() {
         setAmmo(WEAPONS[inputRef.current.weapon as WeaponType].ammo);
       }
 
-      if (updateLocalPlayerRef.current) {
-        updateLocalPlayerRef.current(lp, inputRef.current, 1 / 60, () => DUST2.boxes);
-      }
-
+      updateLocalPlayer(lp, inputRef.current, 1 / 60, () => DUST2.boxes);
       setHealth(lp.health);
       setAmmo(lp.ammo);
       setArmor(lp.armor);
@@ -259,18 +250,16 @@ export default function CSGamePage() {
           recoilRef.current = def.recoilY;
         }
       } else if (inputRef.current.shooting && lp.weapon === 'knife') {
-        const def = WEAPONS.knife;
-        if (now - lastShotRef.current >= def.fireRate) {
+        if (now - lastShotRef.current >= WEAPONS.knife.fireRate) {
           lastShotRef.current = now;
-          let hitId: string | undefined;
           const eyeY = lp.position.y + 1;
           const origin = new THREE.Vector3(lp.position.x, eyeY, lp.position.z);
           for (const e of enemiesRef.current.enemies) {
             const ePos = new THREE.Vector3(e.x, e.y + 1, e.z);
-            if (origin.distanceTo(ePos) < 3) { hitId = e.id; break; }
-          }
-          if (hitId) {
-            netRef.current?.shoot({ x: origin.x, y: eyeY, z: origin.z, dx: 0, dy: 0, dz: -1, weapon: 'knife', hitId });
+            if (origin.distanceTo(ePos) < 3) {
+              netRef.current?.shoot({ x: origin.x, y: eyeY, z: origin.z, dx: 0, dy: 0, dz: -1, weapon: 'knife', hitId: e.id });
+              break;
+            }
           }
         }
       }
@@ -292,10 +281,6 @@ export default function CSGamePage() {
   const handleClick = useCallback(() => {
     if (!pointerLocked && isAlive && status === 'playing') canvasRef.current?.requestPointerLock();
   }, [pointerLocked, isAlive, status]);
-
-  useEffect(() => {
-    return () => { (window as any).__csCleanup?.(); };
-  }, []);
 
   if (!nickname) return null;
 
@@ -319,16 +304,8 @@ export default function CSGamePage() {
               </div>
             ) : null}
             <div style={{ display: 'flex', gap: 16, justifyContent: 'center' }}>
-              <button onClick={() => startGame('CT')} style={{
-                padding: '20px 48px', borderRadius: 12, border: '2px solid #4488ff',
-                background: 'rgba(68,136,255,0.15)', color: '#4488ff', cursor: 'pointer',
-                fontWeight: 'bold', fontSize: 20,
-              }}>CT<div style={{ fontSize: 11, color: '#666', marginTop: 6 }}>M4A1</div></button>
-              <button onClick={() => startGame('T')} style={{
-                padding: '20px 48px', borderRadius: 12, border: '2px solid #ff6b35',
-                background: 'rgba(255,107,53,0.15)', color: '#ff6b35', cursor: 'pointer',
-                fontWeight: 'bold', fontSize: 20,
-              }}>T<div style={{ fontSize: 11, color: '#666', marginTop: 6 }}>AK-47</div></button>
+              <button onClick={() => startGame('CT')} style={{ padding: '20px 48px', borderRadius: 12, border: '2px solid #4488ff', background: 'rgba(68,136,255,0.15)', color: '#4488ff', cursor: 'pointer', fontWeight: 'bold', fontSize: 20 }}>CT<div style={{ fontSize: 11, color: '#666', marginTop: 6 }}>M4A1</div></button>
+              <button onClick={() => startGame('T')} style={{ padding: '20px 48px', borderRadius: 12, border: '2px solid #ff6b35', background: 'rgba(255,107,53,0.15)', color: '#ff6b35', cursor: 'pointer', fontWeight: 'bold', fontSize: 20 }}>T<div style={{ fontSize: 11, color: '#666', marginTop: 6 }}>AK-47</div></button>
             </div>
             <p style={{ color: '#555', marginTop: 24, fontSize: 12 }}>{nickname}</p>
             <button onClick={() => router.push('/')} style={{ marginTop: 16, padding: '8px 20px', background: '#333', color: '#aaa', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 12 }}>Voltar ao Hub</button>
@@ -337,14 +314,10 @@ export default function CSGamePage() {
       )}
 
       {status === 'connecting' && (
-        <div style={{
-          position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: '#000', zIndex: 30,
-        }}>
-          <div style={{ textAlign: 'center', color: '#fff' }}>
-            <div style={{ width: 40, height: 40, border: '3px solid #ff6b6b', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 16px' }} />
-            <p>Conectando ao servidor...</p>
-          </div>
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#000', zIndex: 30 }}>
+          <div style={{ width: 40, height: 40, border: '3px solid #ff6b6b', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 16px' }} />
+          <p style={{ color: '#fff', marginBottom: 16 }}>Conectando ao servidor...</p>
+          <button onClick={() => { setStatus('team_select'); netRef.current?.disconnect(); }} style={{ padding: '8px 20px', background: '#333', color: '#aaa', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 12 }}>Cancelar</button>
         </div>
       )}
 
@@ -393,10 +366,7 @@ export default function CSGamePage() {
       )}
 
       {status === 'playing' && !pointerLocked && isAlive && (
-        <div onClick={handleClick} style={{
-          position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: 'rgba(0,0,0,0.4)', zIndex: 20, cursor: 'pointer',
-        }}>
+        <div onClick={handleClick} style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.4)', zIndex: 20, cursor: 'pointer' }}>
           <div style={{ textAlign: 'center', color: '#fff' }}>
             <p style={{ fontSize: 20, fontWeight: 'bold' }}>Clique para jogar</p>
             <p style={{ fontSize: 12, color: '#888', marginTop: 8 }}>WASD + Mouse | 1/2/3 Armas | Shift Correr | Ctrl Agachar</p>
