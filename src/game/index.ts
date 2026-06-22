@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { io, Socket } from 'socket.io-client';
+import { buildNewMap, MapData } from './mapBuilder';
 
 type GameState = 'loading' | 'connecting' | 'playing' | 'dead' | 'menu';
 
@@ -93,7 +94,6 @@ export default class Game {
   private deathCamAngle = 0;
   private shopItems: { id: string; name: string; price: number; category: string }[] = [];
   private shopOpen = false;
-  private terrainMesh: THREE.Mesh | null = null;
 
   constructor(container: HTMLElement, onStateChange?: (state: GameState) => void) {
     this.container = container;
@@ -140,7 +140,6 @@ export default class Game {
     this.createWeaponArms();
     this.createCrosshair();
     this.setupEventListeners();
-    this.createTouchControls();
   }
 
   private isMobileDevice(): boolean {
@@ -149,11 +148,53 @@ export default class Game {
   }
 
   private createTouchControls() {
-    if (this.isMobileDevice()) {
-      this.createJoystickLeft();
-      this.createJoystickRight();
-      this.createFireButton();
+    if (!this.isMobileDevice()) return;
+    this.createJoystickLeft();
+    this.createJoystickRight();
+    this.createMobileButton('fire-button', 'ATIRAR', 'rgba(255,0,0,0.4)', 'rgba(255,0,0,0.7)', { right: '30px', bottom: '200px', width: '70px', height: '70px', fontSize: '12px' }, () => {
+      if (this.state === 'playing' && this.playerData && !this.playerData.inVehicle) this.shoot();
+    });
+    this.createMobileButton('btn-enter', 'E', 'rgba(0,150,255,0.4)', 'rgba(0,150,255,0.7)', { right: '120px', bottom: '200px', width: '50px', height: '50px', fontSize: '18px' }, () => {
+      if (this.state === 'playing' && this.nearbyVehicle && !this.playerData?.inVehicle) {
+        this.socket?.emit('vehicle_enter', { vehicleId: this.nearbyVehicle.id });
+        this.currentVehicle = this.nearbyVehicle;
+      }
+    });
+    this.createMobileButton('btn-exit', 'F', 'rgba(255,150,0,0.4)', 'rgba(255,150,0,0.7)', { right: '120px', bottom: '260px', width: '50px', height: '50px', fontSize: '18px' }, () => {
+      if (this.state === 'playing' && this.playerData?.inVehicle) {
+        this.socket?.emit('vehicle_exit');
+        this.currentVehicle = null;
+      }
+    });
+    this.createMobileButton('btn-shop', 'LOJA', 'rgba(100,100,255,0.4)', 'rgba(100,100,255,0.7)', { right: '30px', bottom: '300px', width: '60px', height: '40px', fontSize: '11px' }, () => {
+      if (this.shopOpen) this.closeShop(); else this.openShop();
+    });
+    this.createMobileButton('btn-respawn', 'R', 'rgba(0,200,0,0.4)', 'rgba(0,200,0,0.7)', { left: '50%', bottom: '100px', width: '50px', height: '50px', fontSize: '18px', transform: 'translateX(-50%)' }, () => {
+      if (this.state === 'dead') {
+        this.socket?.emit('respawn');
+        this.state = 'playing';
+        this.onStateChange?.('playing');
+        this.hideWASTED();
+      }
+    });
+    const weaponKeys = ['pistol', 'shotgun', 'smg', 'rifle', 'katana'];
+    for (let i = 0; i < weaponKeys.length; i++) {
+      const wk = weaponKeys[i];
+      this.createMobileButton(`btn-wep-${i}`, `${i + 1}`, 'rgba(255,255,255,0.2)', 'rgba(255,255,255,0.5)', { left: `${20 + i * 45}px`, bottom: '100px', width: '40px', height: '40px', fontSize: '14px' }, () => {
+        this.switchWeapon(wk);
+      });
     }
+  }
+
+  private createMobileButton(id: string, label: string, bg: string, bgActive: string, style: Record<string, string>, onClick: () => void) {
+    if (document.getElementById(id)) return;
+    const btn = document.createElement('div');
+    btn.id = id;
+    btn.textContent = label;
+    btn.style.cssText = `position:fixed;border-radius:50%;background:${bg};border:2px solid rgba(255,255,255,0.4);color:white;font-weight:bold;display:flex;align-items:center;justify-content:center;cursor:pointer;user-select:none;touch-action:manipulation;z-index:100;text-align:center;line-height:1;${Object.entries(style).map(([k, v]) => `${k}:${v};`).join('')}`;
+    btn.addEventListener('touchstart', (e) => { e.preventDefault(); btn.style.background = bgActive; btn.style.transform = (style.transform || '') + ' scale(0.9)'; onClick(); }, { passive: false });
+    btn.addEventListener('touchend', () => { btn.style.background = bg; btn.style.transform = style.transform || ''; });
+    document.body.appendChild(btn);
   }
 
   private createJoystickLeft() {
@@ -304,54 +345,6 @@ export default class Game {
     joystick.addEventListener('touchstart', onTouchStart, { passive: false });
     joystick.addEventListener('touchmove', onTouchMove, { passive: false });
     joystick.addEventListener('touchend', onTouchEnd);
-  }
-
-  private createFireButton() {
-    const button = document.createElement('div');
-    button.innerHTML = '🔫';
-    button.style.cssText = `
-      position: fixed;
-      right: 30px;
-      bottom: 200px;
-      width: 70px;
-      height: 70px;
-      border-radius: 50%;
-      background: rgba(255,0,0,0.4);
-      border: 2px solid rgba(255,255,255,0.5);
-      color: white;
-      font-size: 24px;
-      font-weight: bold;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      user-select: none;
-      touch-action: manipulation;
-      z-index: 100;
-    `;
-    button.id = 'fire-button';
-    document.body.appendChild(button);
-
-    let isPressed = false;
-    const onTouchStart = () => {
-      if (isPressed) return;
-      isPressed = true;
-      button.style.background = 'rgba(255,0,0,0.7)';
-      button.style.transform = 'scale(0.9)';
-      if (this.state === 'playing' && this.playerData && !this.playerData.inVehicle) {
-        this.shoot();
-      }
-    };
-
-    const onTouchEnd = () => {
-      if (!isPressed) return;
-      isPressed = false;
-      button.style.background = 'rgba(255,0,0,0.4)';
-      button.style.transform = 'scale(1)';
-    };
-
-    button.addEventListener('touchstart', onTouchStart, { passive: false });
-    button.addEventListener('touchend', onTouchEnd);
   }
 
   private createWeaponArms() {
@@ -617,6 +610,24 @@ export default class Game {
       }
     });
 
+    this.socket.on('vehicles_batch', (vehicles: VehicleData[]) => {
+      for (const vehicle of vehicles) {
+        if (vehicle.driver !== this.socket?.id) {
+          const corrected = this.checkHouseCollision(vehicle.x, vehicle.z, 1.5);
+          vehicle.x = corrected.x;
+          vehicle.z = corrected.z;
+        }
+        this.vehicleDataMap.set(vehicle.id, vehicle);
+        const existing = this.vehicles3D.get(vehicle.id);
+        if (existing) {
+          this.vehicleTargetPos.set(vehicle.id, { x: vehicle.x, y: vehicle.y, z: vehicle.z, rot: vehicle.rotation });
+        } else {
+          this.createVehicle3D(vehicle);
+          this.vehicleTargetPos.set(vehicle.id, { x: vehicle.x, y: vehicle.y, z: vehicle.z, rot: vehicle.rotation });
+        }
+      }
+    });
+
     this.socket.on('projectiles_update', (projectiles: { id: string; x: number; y: number; z: number }[]) => {
       this.updateProjectiles3D(projectiles);
     });
@@ -828,19 +839,9 @@ export default class Game {
     this.buildingFloors = [];
     this.vehicleDataMap.clear();
 
-    const geo = new THREE.PlaneGeometry(this.worldSize, this.worldSize);
-    geo.rotateX(-Math.PI / 2);
-    const ground = new THREE.Mesh(
-      geo,
-      new THREE.MeshLambertMaterial({ color: 0x4a8c3f })
-    );
-    ground.receiveShadow = true;
-    this.scene.add(ground);
-    this.terrainMesh = ground;
-
-    this.createRoads();
-    this.createPlaza();
-    this.createEnvironment();
+    const mapData: MapData = buildNewMap(this.scene, houses);
+    this.houseBounds = mapData.houseBounds;
+    this.buildingFloors = mapData.buildingFloors;
 
     for (const v of vehicles) {
       v.y = 0.5;
@@ -849,780 +850,8 @@ export default class Game {
     }
 
     this.playerData!.y = 0;
-
-    for (const h of houses) {
-      this.createHouse3D(h);
-    }
   }
 
-  private createRoads() {
-    const roadMat = new THREE.MeshLambertMaterial({ color: 0x2a2a2a });
-    const sidewalkMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
-    const dashMat = new THREE.MeshBasicMaterial({ color: 0xdddddd });
-    const edgeLineMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    const bikeMat = new THREE.MeshBasicMaterial({ color: 0x44aa44 });
-
-    const addRoad = (cx: number, cz: number, w: number, d: number) => {
-      const road = new THREE.Mesh(new THREE.BoxGeometry(w, 0.08, d), roadMat);
-      road.position.set(cx, 0.04, cz);
-      road.receiveShadow = true;
-      this.scene.add(road);
-    };
-
-    const addSidewalk = (cx: number, cz: number, w: number, d: number) => {
-      const sw = new THREE.Mesh(new THREE.BoxGeometry(w, 0.18, d), sidewalkMat);
-      sw.position.set(cx, 0.09, cz);
-      sw.receiveShadow = true;
-      this.scene.add(sw);
-    };
-
-    const addDash = (cx: number, cz: number, horizontal: boolean) => {
-      const mesh = new THREE.Mesh(
-        new THREE.BoxGeometry(horizontal ? 4 : 0.15, 0.09, horizontal ? 0.15 : 4),
-        dashMat
-      );
-      mesh.position.set(cx, 0.1, cz);
-      this.scene.add(mesh);
-    };
-
-    const addEdgeLine = (cx: number, cz: number, horizontal: boolean, len: number) => {
-      const mesh = new THREE.Mesh(
-        new THREE.BoxGeometry(horizontal ? len : 0.08, 0.09, horizontal ? 0.08 : len),
-        edgeLineMat
-      );
-      mesh.position.set(cx, 0.1, cz);
-      this.scene.add(mesh);
-    };
-
-    addRoad(0, 0, 30, 800);
-    addSidewalk(-16.5, 0, 3, 800);
-    addSidewalk(16.5, 0, 3, 800);
-    addEdgeLine(-14.8, 0, false, 800);
-    addEdgeLine(14.8, 0, false, 800);
-    for (let z = -400; z < 400; z += 10) {
-      addDash(0, z, false);
-    }
-
-    const crossRoads = [-300, -150, 150, 300];
-    for (const cz of crossRoads) {
-      addRoad(0, cz, 800, 12);
-      addSidewalk(0, cz - 7.5, 800, 3);
-      addSidewalk(0, cz + 7.5, 800, 3);
-      addEdgeLine(0, cz - 5.8, true, 800);
-      addEdgeLine(0, cz + 5.8, true, 800);
-      for (let x = -400; x < 400; x += 10) {
-        addDash(x, cz, true);
-      }
-    }
-
-    for (const sidewalkEdge of [-18, 18]) {
-      for (let z = -400; z < 400; z += 2) {
-        if (Math.abs(z) < 8) continue;
-        let blocked = false;
-        for (const cz of crossRoads) {
-          if (Math.abs(z - cz) < 8) { blocked = true; break; }
-        }
-        if (blocked) continue;
-        const curb = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.06, 2), new THREE.MeshLambertMaterial({ color: 0xaaaaaa }));
-        curb.position.set(sidewalkEdge + (sidewalkEdge < 0 ? -1.5 : 1.5), 0.18, z);
-        this.scene.add(curb);
-      }
-    }
-  }
-
-  private createPlaza() {
-    const plazaGeo = new THREE.CircleGeometry(45, 32);
-    plazaGeo.rotateX(-Math.PI / 2);
-    const plaza = new THREE.Mesh(plazaGeo, new THREE.MeshLambertMaterial({ color: 0x666666 }));
-    plaza.position.set(0, 0.06, 0);
-    plaza.receiveShadow = true;
-    this.scene.add(plaza);
-
-    const fountainBaseMat = new THREE.MeshLambertMaterial({ color: 0x889999 });
-    const fountainBase = new THREE.Mesh(new THREE.CylinderGeometry(4.5, 5, 0.8, 24), fountainBaseMat);
-    fountainBase.position.set(0, 0.4, 0);
-    fountainBase.castShadow = true;
-    this.scene.add(fountainBase);
-
-    const fountainPillar = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.8, 2.0, 12), fountainBaseMat);
-    fountainPillar.position.set(0, 1.8, 0);
-    fountainPillar.castShadow = true;
-    this.scene.add(fountainPillar);
-
-    const fountainTop = new THREE.Mesh(new THREE.CylinderGeometry(2.0, 1.2, 0.5, 16), fountainBaseMat);
-    fountainTop.position.set(0, 3.0, 0);
-    fountainTop.castShadow = true;
-    this.scene.add(fountainTop);
-
-    const water = new THREE.Mesh(
-      new THREE.CylinderGeometry(3.8, 3.8, 0.2, 24),
-      new THREE.MeshLambertMaterial({ color: 0x3388cc, transparent: true, opacity: 0.7 })
-    );
-    water.position.set(0, 0.85, 0);
-    this.scene.add(water);
-
-    const topWater = new THREE.Mesh(
-      new THREE.CylinderGeometry(1.8, 1.8, 0.1, 16),
-      new THREE.MeshLambertMaterial({ color: 0x3388cc, transparent: true, opacity: 0.7 })
-    );
-    topWater.position.set(0, 3.3, 0);
-    this.scene.add(topWater);
-
-    for (let i = 0; i < 8; i++) {
-      const angle = (i / 8) * Math.PI * 2;
-      const bx = Math.cos(angle) * 15;
-      const bz = Math.sin(angle) * 15;
-      this.createBench(bx, bz, angle + Math.PI / 2);
-    }
-
-    for (let i = 0; i < 4; i++) {
-      const angle = (i / 4) * Math.PI * 2 + Math.PI / 4;
-      const lx = Math.cos(angle) * 25;
-      const lz = Math.sin(angle) * 25;
-      this.createStreetLight(lx, lz);
-    }
-  }
-
-  private createBench(x: number, z: number, rotation: number) {
-    const group = new THREE.Group();
-    const woodMat = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
-    const metalMat = new THREE.MeshLambertMaterial({ color: 0x444444 });
-
-    const seat = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.06, 0.45), woodMat);
-    seat.position.set(0, 0.45, 0);
-    seat.castShadow = true;
-    group.add(seat);
-
-    const back = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.4, 0.05), woodMat);
-    back.position.set(0, 0.7, 0.2);
-    back.rotation.x = -0.15;
-    back.castShadow = true;
-    group.add(back);
-
-    for (const sx of [-0.55, 0.55]) {
-      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.45, 0.4), metalMat);
-      leg.position.set(sx, 0.22, 0);
-      group.add(leg);
-    }
-
-    for (const sx of [-0.55, 0.55]) {
-      const armrest = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.2, 0.04), metalMat);
-      armrest.position.set(sx, 0.55, 0.18);
-      group.add(armrest);
-    }
-
-    group.position.set(x, 0, z);
-    group.rotation.y = rotation;
-    this.scene.add(group);
-  }
-
-  private createStreetLight(x: number, z: number) {
-    const group = new THREE.Group();
-    const poleMat = new THREE.MeshLambertMaterial({ color: 0x555555 });
-    const lightMat = new THREE.MeshBasicMaterial({ color: 0xffffcc });
-
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, 6, 8), poleMat);
-    pole.position.set(0, 3, 0);
-    pole.castShadow = true;
-    group.add(pole);
-
-    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 1.2), poleMat);
-    arm.position.set(0, 5.8, 0.6);
-    group.add(arm);
-
-    const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 8), lightMat);
-    lamp.position.set(0, 5.7, 1.2);
-    group.add(lamp);
-
-    const pointLight = new THREE.PointLight(0xffffcc, 0.5, 20);
-    pointLight.position.set(0, 5.5, 1.2);
-    group.add(pointLight);
-
-    group.position.set(x, 0, z);
-    this.scene.add(group);
-  }
-
-  private createTree(x: number, z: number, scale: number = 1) {
-    const group = new THREE.Group();
-    const trunkMat = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
-    const leafMats = [
-      new THREE.MeshLambertMaterial({ color: 0x228B22 }),
-      new THREE.MeshLambertMaterial({ color: 0x2E8B57 }),
-      new THREE.MeshLambertMaterial({ color: 0x3CB371 }),
-    ];
-
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.15 * scale, 0.25 * scale, 2.5 * scale, 8), trunkMat);
-    trunk.position.y = 1.25 * scale;
-    trunk.castShadow = true;
-    group.add(trunk);
-
-    const leafMat = leafMats[Math.floor(Math.random() * leafMats.length)];
-
-    for (let i = 0; i < 3; i++) {
-      const radius = (1.8 - i * 0.4) * scale;
-      const height = (1.5 - i * 0.2) * scale;
-      const leaves = new THREE.Mesh(new THREE.ConeGeometry(radius, height, 8), leafMat);
-      leaves.position.y = (3.0 + i * 1.0) * scale;
-      leaves.castShadow = true;
-      group.add(leaves);
-    }
-
-    group.position.set(x, 0, z);
-    this.scene.add(group);
-  }
-
-  private createTrashCan(x: number, z: number) {
-    const group = new THREE.Group();
-    const bodyMat = new THREE.MeshLambertMaterial({ color: 0x336633 });
-    const rimMat = new THREE.MeshLambertMaterial({ color: 0x444444 });
-
-    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.28, 0.65, 10), bodyMat);
-    body.position.y = 0.32;
-    body.castShadow = true;
-    group.add(body);
-
-    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.23, 0.025, 6, 12), rimMat);
-    rim.position.y = 0.65;
-    rim.rotation.x = Math.PI / 2;
-    group.add(rim);
-
-    const lid = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.04, 10), rimMat);
-    lid.position.y = 0.67;
-    group.add(lid);
-
-    group.position.set(x, 0, z);
-    this.scene.add(group);
-  }
-
-  private createEnvironment() {
-    const halfWorld = this.worldSize / 2;
-    const treePositions: [number, number, number][] = [];
-    const rng = (seed: number) => {
-      let s = seed;
-      return () => { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; };
-    };
-    const rand = rng(42);
-
-    for (let i = 0; i < 80; i++) {
-      const x = (rand() - 0.5) * (halfWorld * 1.6);
-      const z = (rand() - 0.5) * (halfWorld * 1.6);
-      const onRoad = Math.abs(x) < 18 || Math.abs(z) < 8 ||
-        [-300, -150, 150, 300].some(rz => Math.abs(z - rz) < 8);
-      const onPlaza = Math.hypot(x, z) < 50;
-      let inHouse = false;
-      for (const b of this.houseBounds) {
-        if (x > b.minX - 3 && x < b.maxX + 3 && z > b.minZ - 3 && z < b.maxZ + 3) {
-          inHouse = true;
-          break;
-        }
-      }
-      if (onRoad || onPlaza || inHouse) continue;
-      const scale = 0.7 + rand() * 0.8;
-      treePositions.push([x, z, scale]);
-    }
-
-    for (const [tx, tz, ts] of treePositions) {
-      this.createTree(tx, tz, ts);
-    }
-
-    const lightPositions: [number, number][] = [];
-    for (let z = -350; z <= 350; z += 40) {
-      if (Math.abs(z) < 20) continue;
-      lightPositions.push([-18, z]);
-      lightPositions.push([18, z]);
-    }
-    for (let x = -350; x <= 350; x += 40) {
-      if (Math.abs(x) < 20) continue;
-      lightPositions.push([x, -18]);
-      lightPositions.push([x, 18]);
-    }
-    for (const [lx, lz] of lightPositions) {
-      let blocked = false;
-      for (const b of this.houseBounds) {
-        if (lx > b.minX - 1 && lx < b.maxX + 1 && lz > b.minZ - 1 && lz < b.maxZ + 1) {
-          blocked = true;
-          break;
-        }
-      }
-      if (!blocked) this.createStreetLight(lx, lz);
-    }
-
-    for (let i = 0; i < 20; i++) {
-      const angle = rand() * Math.PI * 2;
-      const dist = 50 + rand() * 100;
-      const bx = Math.cos(angle) * dist;
-      const bz = Math.sin(angle) * dist;
-      if (Math.hypot(bx, bz) < 50) continue;
-      this.createTrashCan(bx, bz);
-    }
-  }
-
-  private createVehicle3D(vehicle: VehicleData) {
-    const group = new THREE.Group();
-    const bodyMat = new THREE.MeshLambertMaterial({ color: vehicle.color });
-    const glassMat = new THREE.MeshLambertMaterial({ color: 0x87CEEB, transparent: true, opacity: 0.4 });
-    const chromeMat = new THREE.MeshLambertMaterial({ color: 0xcccccc });
-    const blackMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
-    const headlightMat = new THREE.MeshBasicMaterial({ color: 0xffffaa });
-
-    const wheelGeo = new THREE.CylinderGeometry(0.28, 0.28, 0.18, 10);
-
-    const addWheels = (positions: number[][]) => {
-      for (const [wx, wy, wz] of positions) {
-        const wheel = new THREE.Mesh(wheelGeo, blackMat);
-        wheel.position.set(wx, wy, wz);
-        wheel.rotation.z = Math.PI / 2;
-        group.add(wheel);
-        const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.19, 8), chromeMat);
-        hub.position.set(wx, wy, wz);
-        hub.rotation.z = Math.PI / 2;
-        group.add(hub);
-      }
-    };
-
-    const addHeadlights = (z: number) => {
-      for (const side of [-0.7, 0.7]) {
-        const hl = new THREE.Mesh(new THREE.SphereGeometry(0.08, 6, 6), headlightMat);
-        hl.position.set(side, 0.45, z);
-        group.add(hl);
-      }
-    };
-
-    const addTailights = (z: number) => {
-      for (const side of [-0.7, 0.7]) {
-        const tl = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 6), new THREE.MeshBasicMaterial({ color: 0xff0000 }));
-        tl.position.set(side, 0.45, z);
-        group.add(tl);
-      }
-    };
-
-    const addBumper = (z: number) => {
-      const bumper = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.12, 0.1), chromeMat);
-      bumper.position.set(0, 0.2, z);
-      group.add(bumper);
-    };
-
-    const model = vehicle.model;
-
-    if (model === 'Sedan') {
-      const body = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.5, 4.2), bodyMat);
-      body.position.y = 0.45;
-      body.castShadow = true;
-      group.add(body);
-      const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.5, 2.0), glassMat);
-      cabin.position.set(0, 0.95, -0.2);
-      group.add(cabin);
-      const trunk = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.35, 1.0), bodyMat);
-      trunk.position.set(0, 0.8, 1.2);
-      group.add(trunk);
-      addWheels([[-0.85, 0.28, 1.2], [0.85, 0.28, 1.2], [-0.85, 0.28, -1.2], [0.85, 0.28, -1.2]]);
-      addHeadlights(-2.1);
-      addTailights(2.1);
-      addBumper(-2.15);
-      addBumper(2.15);
-    } else if (model === 'SUV') {
-      const body = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.7, 4.2), bodyMat);
-      body.position.y = 0.55;
-      body.castShadow = true;
-      group.add(body);
-      const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.6, 2.6), glassMat);
-      cabin.position.set(0, 1.15, -0.1);
-      group.add(cabin);
-      const roofRail = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.06, 2.4), blackMat);
-      roofRail.position.set(0, 1.48, -0.1);
-      group.add(roofRail);
-      addWheels([[-0.9, 0.32, 1.3], [0.9, 0.32, 1.3], [-0.9, 0.32, -1.3], [0.9, 0.32, -1.3]]);
-      addHeadlights(-2.1);
-      addTailights(2.1);
-      addBumper(-2.15);
-      addBumper(2.15);
-      const step = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.08, 0.6), blackMat);
-      step.position.set(0, 0.16, 0);
-      group.add(step);
-    } else if (model === 'Sports') {
-      const body = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.35, 4.0), bodyMat);
-      body.position.y = 0.35;
-      body.castShadow = true;
-      group.add(body);
-      const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.35, 1.5), glassMat);
-      cabin.position.set(0, 0.7, -0.3);
-      group.add(cabin);
-      const hood = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.15, 1.2), bodyMat);
-      hood.position.set(0, 0.55, -1.2);
-      hood.rotation.x = -0.1;
-      group.add(hood);
-      const spoiler = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.04, 0.2), blackMat);
-      spoiler.position.set(0, 0.85, 1.8);
-      group.add(spoiler);
-      const spoilerStand1 = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.2, 0.05), blackMat);
-      spoilerStand1.position.set(-0.5, 0.75, 1.8);
-      group.add(spoilerStand1);
-      const spoilerStand2 = spoilerStand1.clone();
-      spoilerStand2.position.x = 0.5;
-      group.add(spoilerStand2);
-      addWheels([[-0.8, 0.28, 1.1], [0.8, 0.28, 1.1], [-0.8, 0.28, -1.1], [0.8, 0.28, -1.1]]);
-      addHeadlights(-2.0);
-      addTailights(2.0);
-    } else if (model === 'Truck') {
-      const cabin = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.8, 2.0), bodyMat);
-      cabin.position.set(0, 0.65, -1.0);
-      cabin.castShadow = true;
-      group.add(cabin);
-      const cabinRoof = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.2, 1.8), bodyMat);
-      cabinRoof.position.set(0, 1.15, -1.0);
-      group.add(cabinRoof);
-      const bed = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.5, 2.2), new THREE.MeshLambertMaterial({ color: 0x555555 }));
-      bed.position.set(0, 0.4, 1.1);
-      group.add(bed);
-      const bedRail1 = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.4, 2.2), blackMat);
-      bedRail1.position.set(-0.95, 0.85, 1.1);
-      group.add(bedRail1);
-      const bedRail2 = bedRail1.clone();
-      bedRail2.position.x = 0.95;
-      group.add(bedRail2);
-      const bedBack = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.35, 0.06), blackMat);
-      bedBack.position.set(0, 0.8, 2.2);
-      group.add(bedBack);
-      const bigWheels = new THREE.CylinderGeometry(0.35, 0.35, 0.22, 10);
-      addWheels([[-1.0, 0.35, 1.2], [1.0, 0.35, 1.2], [-1.0, 0.35, -1.0], [1.0, 0.35, -1.0]]);
-      addHeadlights(-2.0);
-      addTailights(2.2);
-      addBumper(-2.05);
-    } else if (model === 'Muscle') {
-      const body = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.5, 4.2), bodyMat);
-      body.position.y = 0.45;
-      body.castShadow = true;
-      group.add(body);
-      const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.45, 1.6), glassMat);
-      cabin.position.set(0, 0.9, -0.2);
-      group.add(cabin);
-      const hood2 = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.15, 1.5), bodyMat);
-      hood2.position.set(0, 0.75, -1.2);
-      group.add(hood2);
-      const scoop = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.12, 0.4), blackMat);
-      scoop.position.set(0, 0.88, -1.0);
-      group.add(scoop);
-      const stripe1 = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.01, 4.2), new THREE.MeshBasicMaterial({ color: 0xffffff }));
-      stripe1.position.set(-0.3, 0.71, 0);
-      group.add(stripe1);
-      const stripe2 = stripe1.clone();
-      stripe2.position.x = 0.3;
-      group.add(stripe2);
-      addWheels([[-0.9, 0.28, 1.2], [0.9, 0.28, 1.2], [-0.9, 0.28, -1.2], [0.9, 0.28, -1.2]]);
-      addHeadlights(-2.1);
-      addTailights(2.1);
-      addBumper(-2.15);
-      addBumper(2.15);
-    } else if (model === 'Coupe') {
-      const body = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.4, 3.6), bodyMat);
-      body.position.y = 0.4;
-      body.castShadow = true;
-      group.add(body);
-      const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.4, 1.4), glassMat);
-      cabin.position.set(0, 0.8, -0.1);
-      group.add(cabin);
-      const roof2 = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.08, 1.6), bodyMat);
-      roof2.position.set(0, 1.02, -0.1);
-      group.add(roof2);
-      addWheels([[-0.8, 0.26, 1.0], [0.8, 0.26, 1.0], [-0.8, 0.26, -1.0], [0.8, 0.26, -1.0]]);
-      addHeadlights(-1.8);
-      addTailights(1.8);
-      addBumper(-1.85);
-      addBumper(1.85);
-    } else if (model === 'Pickup') {
-      const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.6, 1.8), bodyMat);
-      cabin.position.set(0, 0.55, -1.2);
-      cabin.castShadow = true;
-      group.add(cabin);
-      const cabinRoof = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.12, 1.6), bodyMat);
-      cabinRoof.position.set(0, 0.91, -1.2);
-      group.add(cabinRoof);
-      const cabGlass = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.35, 0.05), glassMat);
-      cabGlass.position.set(0, 0.65, -2.08);
-      group.add(cabGlass);
-      const bed = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.4, 2.0), new THREE.MeshLambertMaterial({ color: 0x555555 }));
-      bed.position.set(0, 0.35, 0.8);
-      group.add(bed);
-      const rail1 = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.35, 2.0), blackMat);
-      rail1.position.set(-0.85, 0.72, 0.8);
-      group.add(rail1);
-      const rail2 = rail1.clone();
-      rail2.position.x = 0.85;
-      group.add(rail2);
-      const backGate = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.3, 0.05), blackMat);
-      backGate.position.set(0, 0.65, 1.8);
-      group.add(backGate);
-      const sideStep1 = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.06, 1.4), blackMat);
-      sideStep1.position.set(-0.95, 0.18, -0.3);
-      group.add(sideStep1);
-      const sideStep2 = sideStep1.clone();
-      sideStep2.position.x = 0.95;
-      group.add(sideStep2);
-      addWheels([[-0.9, 0.3, 1.3], [0.9, 0.3, 1.3], [-0.9, 0.3, -1.2], [0.9, 0.3, -1.2]]);
-      addHeadlights(-2.1);
-      addTailights(1.8);
-      addBumper(-2.15);
-    } else if (model === 'Van') {
-      const body = new THREE.Mesh(new THREE.BoxGeometry(2.0, 1.1, 4.5), bodyMat);
-      body.position.y = 0.75;
-      body.castShadow = true;
-      group.add(body);
-      const roof = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.08, 4.3), bodyMat);
-      roof.position.set(0, 1.34, 0);
-      group.add(roof);
-      const windshield = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.5, 0.05), glassMat);
-      windshield.position.set(0, 0.85, -2.25);
-      group.add(windshield);
-      const rearWindow = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.35, 0.05), glassMat);
-      rearWindow.position.set(0, 0.9, 2.25);
-      group.add(rearWindow);
-      for (const side of [-1, 1]) {
-        for (let i = 0; i < 3; i++) {
-          const sideWin = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.35, 0.6), glassMat);
-          sideWin.position.set(side * 1.01, 0.9, -1.0 + i * 1.2);
-          group.add(sideWin);
-        }
-      }
-      const sliding = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.8, 1.4), new THREE.MeshLambertMaterial({ color: new THREE.Color(vehicle.color).multiplyScalar(0.9).getHex() }));
-      sliding.position.set(1.03, 0.65, 0.5);
-      group.add(sliding);
-      addWheels([[-0.9, 0.3, 1.5], [0.9, 0.3, 1.5], [-0.9, 0.3, -1.5], [0.9, 0.3, -1.5]]);
-      addHeadlights(-2.25);
-      addTailights(2.25);
-      addBumper(-2.3);
-      addBumper(2.3);
-    }
-
-    const mirrorGeo = new THREE.BoxGeometry(0.08, 0.06, 0.12);
-    for (const side of [-0.95, 0.95]) {
-      const mirror = new THREE.Mesh(mirrorGeo, blackMat);
-      mirror.position.set(side, 0.8, -0.5);
-      group.add(mirror);
-    }
-
-    group.position.set(vehicle.x, vehicle.y, vehicle.z);
-    group.rotation.y = vehicle.rotation;
-    this.scene.add(group);
-    this.vehicles3D.set(vehicle.id, group);
-  }
-
-  private createHouse3D(house: HouseData) {
-    const group = new THREE.Group();
-    const { x, z, w, h, d, color, roofColor } = house;
-    const wt = 0.35;
-    const hh = h;
-    const hw = w / 2;
-    const hd = d / 2;
-    const doorSide = house.doorSide ?? 0;
-    const doorW = 2.2;
-    const floorH = 3.5;
-    const floors = Math.max(1, Math.round(hh / floorH));
-    const groundY = this.getHeight(x, z);
-
-    const wallMat = new THREE.MeshLambertMaterial({ color });
-    const floorMat = new THREE.MeshLambertMaterial({ color: 0x998877 });
-    const roofMat = new THREE.MeshLambertMaterial({ color: roofColor ?? 0x555555 });
-    const stairMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
-    const parapetMat = new THREE.MeshLambertMaterial({ color });
-    const windowMat = new THREE.MeshBasicMaterial({ color: 0x88aacc, transparent: true, opacity: 0.6 });
-    const windowFrameMat = new THREE.MeshLambertMaterial({ color: 0x555555 });
-    const doorFrameMat = new THREE.MeshLambertMaterial({ color: 0x4a3520 });
-    const doorMat = new THREE.MeshLambertMaterial({ color: 0x6b3a1f });
-    const trimMat = new THREE.MeshLambertMaterial({ color: new THREE.Color(color).multiplyScalar(0.85).getHex() });
-
-    const addBox = (cx: number, cy: number, cz: number, bw: number, bh: number, bd: number, mat: THREE.Material, cast = true) => {
-      const mesh = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, bd), mat);
-      mesh.position.set(x + cx, cy, z + cz);
-      mesh.castShadow = cast;
-      mesh.receiveShadow = true;
-      group.add(mesh);
-      return mesh;
-    };
-
-    for (let f = 0; f <= floors; f++) {
-      const fy = groundY + f * floorH;
-      const isTop = f === floors;
-      addBox(0, fy + 0.075, 0, w, 0.15, d, isTop ? roofMat : floorMat);
-    }
-
-    const wallSegs: { x: number; z: number; w: number; d: number }[] = [];
-    const splitWall = (side: number) => {
-      if (side === doorSide) {
-        const totalLen = side === 0 || side === 2 ? w : d;
-        const segLen = (totalLen - doorW) / 2;
-        if (side === 0) {
-          wallSegs.push({ x: -hw + segLen / 2, z: -hd, w: segLen, d: wt });
-          wallSegs.push({ x: hw - segLen / 2, z: -hd, w: segLen, d: wt });
-        } else if (side === 1) {
-          wallSegs.push({ x: hw, z: -hd + segLen / 2, w: wt, d: segLen });
-          wallSegs.push({ x: hw, z: hd - segLen / 2, w: wt, d: segLen });
-        } else if (side === 2) {
-          wallSegs.push({ x: -hw + segLen / 2, z: hd, w: segLen, d: wt });
-          wallSegs.push({ x: hw - segLen / 2, z: hd, w: segLen, d: wt });
-        } else {
-          wallSegs.push({ x: -hw, z: -hd + segLen / 2, w: wt, d: segLen });
-          wallSegs.push({ x: -hw, z: hd - segLen / 2, w: wt, d: segLen });
-        }
-      } else {
-        if (side === 0 || side === 2) {
-          const sz = side === 0 ? -hd : hd;
-          wallSegs.push({ x: 0, z: sz, w: w, d: wt });
-        } else {
-          const sx = side === 1 ? hw : -hw;
-          wallSegs.push({ x: sx, z: 0, w: wt, d: d });
-        }
-      }
-    };
-
-    splitWall(0);
-    splitWall(1);
-    splitWall(2);
-    splitWall(3);
-
-    for (const seg of wallSegs) {
-      addBox(seg.x, groundY + hh / 2, seg.z, seg.w, hh, seg.d, wallMat);
-      this.houseBounds.push({
-        minX: x + seg.x - seg.w / 2 - 0.3,
-        maxX: x + seg.x + seg.w / 2 + 0.3,
-        minZ: z + seg.z - seg.d / 2 - 0.3,
-        maxZ: z + seg.z + seg.d / 2 + 0.3,
-      });
-    }
-
-    const trimH = 0.12;
-    addBox(0, groundY + trimH / 2, -hd - 0.01, w + 0.1, trimH, 0.06, trimMat);
-    addBox(0, groundY + trimH / 2, hd + 0.01, w + 0.1, trimH, 0.06, trimMat);
-    addBox(-hw - 0.01, groundY + trimH / 2, 0, 0.06, trimH, d + 0.1, trimMat);
-    addBox(hw + 0.01, groundY + trimH / 2, 0, 0.06, trimH, d + 0.1, trimMat);
-
-    for (let f = 0; f < floors; f++) {
-      const fy = groundY + f * floorH + floorH * 0.5;
-      if (fy > groundY + hh - 0.5) continue;
-
-      const windowW = 0.6;
-      const windowH = 0.8;
-      const windowFrameT = 0.06;
-
-      for (const side of [0, 1, 2, 3]) {
-        if (side === doorSide && f === 0) {
-          const dw = 1.0;
-          const dh = 2.2;
-          let doorX = 0, doorZ = 0, doorRotY = 0;
-          if (side === 0) { doorX = 0; doorZ = -hd - 0.02; doorRotY = 0; }
-          else if (side === 1) { doorX = hw + 0.02; doorZ = 0; doorRotY = Math.PI / 2; }
-          else if (side === 2) { doorX = 0; doorZ = hd + 0.02; doorRotY = Math.PI; }
-          else { doorX = -hw - 0.02; doorZ = 0; doorRotY = -Math.PI / 2; }
-
-          addBox(doorX, groundY + dh / 2, doorZ, dw + 0.15, dh + 0.08, 0.1, doorFrameMat, false);
-          addBox(doorX, groundY + dh / 2, doorZ, dw, dh, 0.08, doorMat, false);
-          const knobX = doorX + (side === 1 ? 0.05 : side === 3 ? -0.05 : (side === 0 ? 0.35 : -0.35));
-          const knobZ = doorZ + (side === 0 ? -0.05 : side === 2 ? 0.05 : 0);
-          const knob = new THREE.Mesh(new THREE.SphereGeometry(0.04, 6, 6), new THREE.MeshLambertMaterial({ color: 0xccaa44 }));
-          knob.position.set(knobX, groundY + 1.1, knobZ);
-          knob.castShadow = false;
-          group.add(knob);
-        } else {
-          const winCount = (side === 0 || side === 2) ? Math.max(1, Math.floor(w / 3)) : Math.max(1, Math.floor(d / 3));
-          for (let wi = 0; wi < winCount; wi++) {
-            const totalSide = (side === 0 || side === 2) ? w : d;
-            const spacing = totalSide / (winCount + 1);
-            const offset = -totalSide / 2 + spacing * (wi + 1);
-            let wx = 0, wz = 0, wrY = 0;
-            if (side === 0) { wx = offset; wz = -hd - 0.02; wrY = 0; }
-            else if (side === 1) { wx = hw + 0.02; wz = offset; wrY = Math.PI / 2; }
-            else if (side === 2) { wx = offset; wz = hd + 0.02; wrY = Math.PI; }
-            else { wx = -hw - 0.02; wz = offset; wrY = -Math.PI / 2; }
-
-            const winFrame = new THREE.Mesh(new THREE.BoxGeometry(windowW + windowFrameT * 2, windowH + windowFrameT * 2, 0.08), windowFrameMat);
-            winFrame.position.set(x + wx, fy, z + wz);
-            winFrame.rotation.y = wrY;
-            winFrame.castShadow = false;
-            group.add(winFrame);
-
-            const winGlass = new THREE.Mesh(new THREE.BoxGeometry(windowW, windowH, 0.05), windowMat);
-            winGlass.position.set(x + wx, fy, z + wz);
-            winGlass.rotation.y = wrY;
-            winGlass.castShadow = false;
-            group.add(winGlass);
-
-            const crossH = new THREE.Mesh(new THREE.BoxGeometry(windowW, 0.03, 0.06), windowFrameMat);
-            crossH.position.set(x + wx, fy, z + wz);
-            crossH.rotation.y = wrY;
-            crossH.castShadow = false;
-            group.add(crossH);
-            const crossV = new THREE.Mesh(new THREE.BoxGeometry(0.03, windowH, 0.06), windowFrameMat);
-            crossV.position.set(x + wx, fy, z + wz);
-            crossV.rotation.y = wrY;
-            crossV.castShadow = false;
-            group.add(crossV);
-          }
-        }
-      }
-    }
-
-    if (floors >= 2) {
-      const stairW = 1.8;
-      const stairLen = Math.min(w, d) * 0.6;
-      const stepsPerFloor = 8;
-      const stepH = floorH / stepsPerFloor;
-      const stepD = stairLen / stepsPerFloor;
-
-      let stairX = 0;
-      let stairZ = 0;
-      let stairDirX = 0;
-      let stairDirZ = 1;
-
-      switch (doorSide) {
-        case 0: stairX = -hw + 2; stairZ = -hd + stairLen / 2 + 1; stairDirZ = 1; break;
-        case 1: stairX = hw - stairLen / 2 - 1; stairZ = -hd + 2; stairDirX = -1; break;
-        case 2: stairX = hw - 2; stairZ = hd - stairLen / 2 - 1; stairDirZ = -1; break;
-        case 3: stairX = -hw + stairLen / 2 + 1; stairZ = hd - 2; stairDirX = 1; break;
-      }
-
-      this.buildingFloors.push({
-        minX: x - hw, maxX: x + hw,
-        minZ: z - hd, maxZ: z + hd,
-        groundY, floorH, floors,
-        stairX: x + stairX, stairZ: z + stairZ,
-        stairDirX, stairDirZ, stairLen,
-      });
-
-      for (let f = 0; f < floors; f++) {
-        const baseY = groundY + f * floorH;
-        for (let s = 0; s < stepsPerFloor; s++) {
-          const sy = baseY + stepH / 2 + s * stepH;
-          const sx = stairX + stairDirX * (s * stepD + stepD / 2);
-          const sz = stairZ + stairDirZ * (s * stepD + stepD / 2);
-          addBox(sx, sy, sz, stairW, stepH + 0.05, stepD, stairMat);
-        }
-      }
-
-      const pWallH = 0.9;
-      const pWallT = 0.2;
-      const roofY = groundY + hh;
-      addBox(0, roofY + pWallH / 2, -hd, w + pWallT * 2, pWallH, pWallT, parapetMat);
-      addBox(0, roofY + pWallH / 2, hd, w + pWallT * 2, pWallH, pWallT, parapetMat);
-      addBox(-hw, roofY + pWallH / 2, 0, pWallT, pWallH, d, parapetMat);
-      addBox(hw, roofY + pWallH / 2, 0, pWallT, pWallH, d, parapetMat);
-    }
-
-    if (floors === 1 && hh <= 4) {
-      const roofY = groundY + hh;
-      const roofPeak = roofY + 1.2;
-      const roofOverhang = 0.5;
-      for (let i = 0; i < 4; i++) {
-        const t = i / 3;
-        const ry = roofY + t * 1.2;
-        const rw = w + roofOverhang * 2 * (1 - t);
-        const rd = d + roofOverhang * 2 * (1 - t);
-        addBox(0, ry + 0.08, 0, rw, 0.16, rd, roofMat);
-      }
-    }
-
-    group.position.set(0, 0, 0);
-    this.scene.add(group);
-    this.houses3D.set(house.id, group);
-  }
 
   private updateVehicle3D(vehicle: VehicleData) {
     const existing = this.vehicles3D.get(vehicle.id);
