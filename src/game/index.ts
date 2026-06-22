@@ -127,7 +127,7 @@ export default class Game {
     const dir = new THREE.DirectionalLight(0xfff5e6, 1.0);
     dir.position.set(50, 80, 30);
     dir.castShadow = true;
-    dir.shadow.mapSize.set(2048, 2048);
+    dir.shadow.mapSize.set(1024, 1024);
     dir.shadow.camera.near = 0.5;
     dir.shadow.camera.far = 500;
     dir.shadow.camera.left = -400;

@@ -99,7 +99,7 @@ function createRoads(scene: THREE.Scene) {
   }
 
   for (const sx of [-18, 18]) {
-    for (let z = -400; z < 400; z += 2) {
+    for (let z = -400; z < 400; z += 6) {
       if (Math.abs(z) < 8) continue;
       let blocked = false;
       for (const cz of CROSS_ROADS) {
@@ -383,7 +383,7 @@ function createEnvironment(scene: THREE.Scene, houseBounds: MapData['houseBounds
   const rand = seededRandom(42);
 
   const treePositions: [number, number, number][] = [];
-  for (let i = 0; i < 80; i++) {
+  for (let i = 0; i < 35; i++) {
     const tx = (rand() - 0.5) * (WORLD_SIZE * 1.6);
     const tz = (rand() - 0.5) * (WORLD_SIZE * 1.6);
     const onRoad = Math.abs(tx) < 18 || Math.abs(tz) < 8 || CROSS_ROADS.some(rz => Math.abs(tz - rz) < 8);
@@ -428,12 +428,12 @@ function createEnvironment(scene: THREE.Scene, houseBounds: MapData['houseBounds
   const poleMat = new THREE.MeshLambertMaterial({ color: 0x555555 });
   const lightMat = new THREE.MeshBasicMaterial({ color: 0xffffcc });
   const lightPositions: [number, number][] = [];
-  for (let lz = -350; lz <= 350; lz += 40) {
+  for (let lz = -350; lz <= 350; lz += 80) {
     if (Math.abs(lz) < 20) continue;
     lightPositions.push([-18, lz]);
     lightPositions.push([18, lz]);
   }
-  for (let lx = -350; lx <= 350; lx += 40) {
+  for (let lx = -350; lx <= 350; lx += 80) {
     if (Math.abs(lx) < 20) continue;
     lightPositions.push([lx, -18]);
     lightPositions.push([lx, 18]);
@@ -467,7 +467,7 @@ function createEnvironment(scene: THREE.Scene, houseBounds: MapData['houseBounds
 
   const trashMat = new THREE.MeshLambertMaterial({ color: 0x336633 });
   const rimMat = new THREE.MeshLambertMaterial({ color: 0x444444 });
-  for (let i = 0; i < 20; i++) {
+  for (let i = 0; i < 8; i++) {
     const angle = rand() * Math.PI * 2;
     const dist = 50 + rand() * 100;
     const bx = Math.cos(angle) * dist;
