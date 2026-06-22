@@ -386,12 +386,12 @@ export default class Game {
 
     const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.08, 0.5, 8), new THREE.MeshLambertMaterial({ color: 0x334455 }));
     sleeve.position.set(0.2, -0.1, -0.35);
-    sleeve.rotation.x = 0.2;
+    sleeve.rotation.x = Math.PI / 2 + 0.2;
     this.weaponArms.add(sleeve);
 
     const forearm = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.04, 0.35, 8), skinMat);
     forearm.position.set(0.2, -0.08, -0.62);
-    forearm.rotation.x = 0.05;
+    forearm.rotation.x = Math.PI / 2;
     this.weaponArms.add(forearm);
 
     const hand = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.065, 0.12), skinMat);
