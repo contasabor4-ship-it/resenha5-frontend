@@ -93,11 +93,12 @@ export default function Hub() {
     {
       name: 'Resenha 5',
       emoji: '🏴',
-      desc: 'Mundo aberto 3D multiplayer. Missoes, assaltos, veiculos e muito mais.',
+      desc: 'Mundo aberto 3D multiplayer. Em desenvolvimento.',
       color: '#ff6b6b',
       borderColor: 'rgba(255,100,100,0.3)',
       hoverBorder: 'rgba(255,100,100,0.8)',
-      path: '/resenha5',
+      path: '',
+      disabled: true,
     },
     {
       name: 'Esconde-Esconde',
@@ -124,13 +125,14 @@ export default function Hub() {
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px', maxWidth: '900px', width: '100%' }}>
         {games.map((game) => (
-          <div key={game.name} onClick={() => router.push(game.path)} style={{ background: 'rgba(20,20,30,0.9)', padding: '30px', borderRadius: '16px', border: `1px solid ${game.borderColor}`, cursor: 'pointer', textAlign: 'center', transition: 'transform 0.2s, border-color 0.2s' }}
-            onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.transform = 'scale(1.02)'; (e.currentTarget as HTMLDivElement).style.borderColor = game.hoverBorder; }}
+          <div key={game.name} onClick={() => { if (!game.disabled && game.path) router.push(game.path); }} style={{ background: 'rgba(20,20,30,0.9)', padding: '30px', borderRadius: '16px', border: `1px solid ${game.borderColor}`, cursor: game.disabled ? 'default' : 'pointer', textAlign: 'center', transition: 'transform 0.2s, border-color 0.2s', opacity: game.disabled ? 0.5 : 1 }}
+            onMouseEnter={e => { if (!game.disabled) { (e.currentTarget as HTMLDivElement).style.transform = 'scale(1.02)'; (e.currentTarget as HTMLDivElement).style.borderColor = game.hoverBorder; }}}
             onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.transform = 'scale(1)'; (e.currentTarget as HTMLDivElement).style.borderColor = game.borderColor; }}
           >
             <div style={{ fontSize: '48px', marginBottom: '12px' }}>{game.emoji}</div>
             <h2 style={{ fontSize: '22px', color: game.color, marginBottom: '8px' }}>{game.name}</h2>
             <p style={{ color: '#888', fontSize: '13px' }}>{game.desc}</p>
+            {game.disabled && <p style={{ color: '#ff6b6b', fontSize: '12px', marginTop: '8px', fontWeight: 'bold' }}>Em Desenvolvimento</p>}
           </div>
         ))}
       </div>
