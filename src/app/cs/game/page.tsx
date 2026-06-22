@@ -1,6 +1,7 @@
 'use client';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import * as THREE from 'three';
 import { createCSNetworkClient } from '../../../lib/cs/network/client';
 import { WeaponType, WEAPONS } from '../../../lib/cs/types';
 import { DUST2 } from '../../../lib/cs/maps/dust2';
@@ -30,12 +31,14 @@ export default function CSGamePage() {
   const rendererRef = useRef<any>(null);
   const netRef = useRef<any>(null);
   const lpRef = useRef<any>(null);
-  const enemiesRef = useRef<any>({ enemies: [] });
+  const enemiesRef = useRef<any>({ enemies: [], update: () => {}, getEnemyAt: () => null });
   const inputRef = useRef({ forward: false, backward: false, left: false, right: false, jump: false, crouch: false, sprint: false, shooting: false, yaw: 0, pitch: 0, weapon: 'ak47' as WeaponType });
   const recoilRef = useRef(0);
   const lastSendRef = useRef(0);
   const plLockedRef = useRef(false);
   const gameRunningRef = useRef(false);
+  const lastShotRef = useRef(0);
+  const updateLocalPlayerRef = useRef<any>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem('r5_nickname');
@@ -50,19 +53,30 @@ export default function CSGamePage() {
     setStatus('connecting');
 
     const { createCSRenderer } = await import('../../../lib/cs/engine/renderer');
-    const { createLocalPlayer } = await import('../../../lib/cs/engine/player');
+    const { createLocalPlayer, updateLocalPlayer } = await import('../../../lib/cs/engine/player');
     const { createEnemyManager } = await import('../../../lib/cs/engine/enemies');
 
+    updateLocalPlayerRef.current = updateLocalPlayer;
+
     const renderer = createCSRenderer();
-    renderer.init(canvasRef.current!);
+    if (canvasRef.current) {
+      renderer.init(canvasRef.current);
+    }
     renderer.buildMap(DUST2);
     renderer.switchWeapon(selectedTeam === 'CT' ? 'm4a1' : 'ak47');
     rendererRef.current = renderer;
+    (window as any).__csRenderer = renderer;
 
     const defaultWeapon: WeaponType = selectedTeam === 'CT' ? 'm4a1' : 'ak47';
     const spawn = selectedTeam === 'CT' ? DUST2.spawnCT : DUST2.spawnT;
-    lpRef.current = createLocalPlayer(spawn, selectedTeam);
+    const lp = createLocalPlayer(spawn, selectedTeam);
+    lpRef.current = lp;
     enemiesRef.current = createEnemyManager();
+
+    setWeapon(defaultWeapon);
+    setAmmo(WEAPONS[defaultWeapon].ammo);
+    setHealth(100);
+    setArmor(0);
 
     const net = createCSNetworkClient();
     netRef.current = net;
@@ -70,30 +84,34 @@ export default function CSGamePage() {
     net.onMatchJoined((data: any) => {
       const me = data.players.find((p: any) => p.id === data.playerId);
       if (me) {
-        lpRef.current.x = me.x; lpRef.current.y = me.y; lpRef.current.z = me.z;
-        lpRef.current.health = me.health; lpRef.current.weapon = me.weapon; lpRef.current.ammo = me.ammo;
+        lp.x = me.x; lp.y = me.y; lp.z = me.z;
+        lp.health = me.health; lp.weapon = me.weapon; lp.ammo = me.ammo;
+        lp.team = me.team;
         setHealth(me.health); setAmmo(me.ammo); setWeapon(me.weapon);
-      }
-      if (data.match.phase === 'playing') {
-        setStatus('playing');
-        setGameStarted(true);
-      } else {
-        setStatus('playing');
       }
       setRound(data.match.round || 0);
       setMaxRounds(data.match.maxRounds || 15);
       setCtScore(data.match.ctScore || 0);
       setTScore(data.match.tScore || 0);
       setTimeLeft(data.match.timeLeft || 0);
+
+      if (data.match.phase === 'playing') {
+        setStatus('playing');
+        setIsAlive(true);
+      } else {
+        setStatus('playing');
+      }
     });
 
     net.onPlayersUpdate((players: any[]) => {
-      const myId = net.socket.id;
+      const myId = net.socket?.id;
       enemiesRef.current.update(players.filter((p: any) => p.id !== myId));
       const me = players.find((p: any) => p.id === myId);
       if (me) {
         setIsAlive(me.isAlive);
-        if (me.isAlive) { setHealth(me.health); setAmmo(me.ammo); setWeapon(me.weapon); setArmor(me.armor); }
+        if (me.isAlive) {
+          setHealth(me.health); setAmmo(me.ammo); setWeapon(me.weapon); setArmor(me.armor);
+        }
       }
     });
 
@@ -104,10 +122,8 @@ export default function CSGamePage() {
     });
 
     net.onBullet((data: any) => rendererRef.current?.renderBullet(data));
-
     net.onKillfeed((data: any) => setKillfeed(prev => [data, ...prev].slice(0, 5)));
-
-    net.onPlayerDied((data: any) => { if (data.victimId === net.socket.id) setIsAlive(false); });
+    net.onPlayerDied((data: any) => { if (data.victimId === net.socket?.id) setIsAlive(false); });
 
     net.onCountdown((data: any) => {
       setCountdown(data.seconds);
@@ -115,16 +131,22 @@ export default function CSGamePage() {
     });
 
     net.onRoundEnd((data: any) => {
-      setStatus('team_select');
       setCtScore(data.ctScore); setTScore(data.tScore); setRound(data.round);
     });
 
     net.onMatchEnd((data: any) => {
-      setStatus('team_select');
       setCtScore(data.ctScore); setTScore(data.tScore);
+      setStatus('team_select');
+      gameRunningRef.current = false;
+      net.disconnect();
+      rendererRef.current?.dispose();
+      (window as any).__csRenderer = null;
     });
 
-    net.onError((msg: string) => console.error('CS error:', msg));
+    net.onError((msg: string) => {
+      console.error('CS error:', msg);
+      setStatus('team_select');
+    });
 
     net.connect(CS_SERVER_URL, nickname);
     setTimeout(() => net.joinMatch(selectedTeam), 500);
@@ -183,84 +205,87 @@ export default function CSGamePage() {
     };
   }, [nickname]);
 
-  const setGameStarted = useCallback((v: boolean) => {}, []);
-
   function gameLoop() {
     if (!gameRunningRef.current) return;
     const now = performance.now();
 
     const lp = lpRef.current;
     const r = rendererRef.current;
-    if (lp && r) {
-      if (lp.alive) {
-        const lastWeapon = lp.weapon;
-        if (inputRef.current.weapon !== lastWeapon) {
-          lp.weapon = inputRef.current.weapon;
-          lp.ammo = WEAPONS[inputRef.current.weapon].ammo;
-          r.switchWeapon(inputRef.current.weapon);
-          setWeapon(inputRef.current.weapon);
-          setAmmo(WEAPONS[inputRef.current.weapon].ammo);
-        }
+    if (lp && r && lp.alive) {
+      if (inputRef.current.weapon !== lp.weapon) {
+        lp.weapon = inputRef.current.weapon;
+        lp.ammo = WEAPONS[inputRef.current.weapon].ammo;
+        r.switchWeapon(inputRef.current.weapon);
+        setWeapon(inputRef.current.weapon);
+        setAmmo(WEAPONS[inputRef.current.weapon].ammo);
+      }
 
-        const { updateLocalPlayer } = require('../../../lib/cs/engine/player');
-        updateLocalPlayer(lp, inputRef.current, 1 / 60, () => DUST2.boxes);
+      if (updateLocalPlayerRef.current) {
+        updateLocalPlayerRef.current(lp, inputRef.current, 1 / 60, () => DUST2.boxes);
+      }
 
-        setHealth(lp.health);
-        setAmmo(lp.ammo);
-        setArmor(lp.armor);
+      setHealth(lp.health);
+      setAmmo(lp.ammo);
+      setArmor(lp.armor);
 
-        if (inputRef.current.shooting) {
-          const { WEAPONS: W } = require('../../../lib/cs/types');
-          const def = W[lp.weapon];
-          if (now - (lp._lastShot || 0) >= def.fireRate && lp.ammo > 0) {
-            lp._lastShot = now;
-            if (lp.weapon !== 'knife') lp.ammo--;
+      if (inputRef.current.shooting && lp.weapon !== 'knife') {
+        const def = WEAPONS[lp.weapon];
+        if (now - lastShotRef.current >= def.fireRate && lp.ammo > 0) {
+          lastShotRef.current = now;
+          lp.ammo--;
 
-            const THREE = require('three');
-            const eyeY = lp.position.y + (inputRef.current.crouch ? 1.2 : 1.6);
-            const fwd = new THREE.Vector3(0, 0, -1);
-            fwd.applyEuler(new THREE.Euler(lp.pitch, lp.yaw, 0, 'YXZ'));
-            fwd.x += (Math.random() - 0.5) * def.spread;
-            fwd.y += (Math.random() - 0.5) * def.spread;
-            fwd.z += (Math.random() - 0.5) * def.spread;
-            fwd.normalize();
+          const eyeY = lp.position.y + (inputRef.current.crouch ? 1.2 : 1.6);
+          const fwd = new THREE.Vector3(0, 0, -1);
+          fwd.applyEuler(new THREE.Euler(lp.pitch, lp.yaw, 0, 'YXZ'));
+          fwd.x += (Math.random() - 0.5) * def.spread;
+          fwd.y += (Math.random() - 0.5) * def.spread;
+          fwd.z += (Math.random() - 0.5) * def.spread;
+          fwd.normalize();
 
-            let hitId: string | undefined;
-            for (const e of enemiesRef.current.enemies) {
-              const ePos = new THREE.Vector3(e.x, e.y + 1, e.z);
-              const origin = new THREE.Vector3(lp.position.x, eyeY, lp.position.z);
-              const toEnemy = ePos.clone().sub(origin);
-              const dot = toEnemy.dot(fwd);
-              if (dot > 0 && dot < def.range) {
-                const closest = origin.clone().add(fwd.clone().multiplyScalar(dot));
-                if (closest.distanceTo(ePos) < 0.6) { hitId = e.id; break; }
-              }
+          let hitId: string | undefined;
+          const origin = new THREE.Vector3(lp.position.x, eyeY, lp.position.z);
+          for (const e of enemiesRef.current.enemies) {
+            const ePos = new THREE.Vector3(e.x, e.y + 1, e.z);
+            const toEnemy = ePos.clone().sub(origin);
+            const dot = toEnemy.dot(fwd);
+            if (dot > 0 && dot < def.range) {
+              const closest = origin.clone().add(fwd.clone().multiplyScalar(dot));
+              if (closest.distanceTo(ePos) < 0.6) { hitId = e.id; break; }
             }
+          }
 
-            netRef.current?.shoot({
-              x: lp.position.x, y: eyeY, z: lp.position.z,
-              dx: fwd.x, dy: fwd.y, dz: fwd.z,
-              weapon: lp.weapon, hitId,
-            });
-
-            r.renderMuzzleFlash(lp.position.x + fwd.x * 0.5, eyeY + fwd.y * 0.5, lp.position.z + fwd.z * 0.5);
-            recoilRef.current = def.recoilY;
+          netRef.current?.shoot({ x: origin.x, y: eyeY, z: origin.z, dx: fwd.x, dy: fwd.y, dz: fwd.z, weapon: lp.weapon, hitId });
+          r.renderMuzzleFlash(origin.x + fwd.x * 0.5, eyeY + fwd.y * 0.5, origin.z + fwd.z * 0.5);
+          recoilRef.current = def.recoilY;
+        }
+      } else if (inputRef.current.shooting && lp.weapon === 'knife') {
+        const def = WEAPONS.knife;
+        if (now - lastShotRef.current >= def.fireRate) {
+          lastShotRef.current = now;
+          let hitId: string | undefined;
+          const eyeY = lp.position.y + 1;
+          const origin = new THREE.Vector3(lp.position.x, eyeY, lp.position.z);
+          for (const e of enemiesRef.current.enemies) {
+            const ePos = new THREE.Vector3(e.x, e.y + 1, e.z);
+            if (origin.distanceTo(ePos) < 3) { hitId = e.id; break; }
+          }
+          if (hitId) {
+            netRef.current?.shoot({ x: origin.x, y: eyeY, z: origin.z, dx: 0, dy: 0, dz: -1, weapon: 'knife', hitId });
           }
         }
-
-        recoilRef.current *= 0.88;
-        r.updateCamera(lp.position, lp.yaw, lp.pitch + recoilRef.current, inputRef.current.crouch);
-        r.renderEnemies(enemiesRef.current.enemies, lp.team || 'CT');
       }
 
-      if (now - lastSendRef.current > 50 && lp) {
-        netRef.current?.sendState({ x: lp.position.x, y: lp.position.y, z: lp.position.z, yaw: lp.yaw, pitch: lp.pitch, health: lp.health, armor: lp.armor, weapon: lp.weapon, ammo: lp.ammo, isAlive: lp.alive });
-        lastSendRef.current = now;
-      }
-
-      r.renderMap();
+      recoilRef.current *= 0.88;
+      r.updateCamera(lp.position, lp.yaw, lp.pitch + recoilRef.current, inputRef.current.crouch);
+      r.renderEnemies(enemiesRef.current.enemies, lp.team || 'CT');
     }
 
+    if (now - lastSendRef.current > 50 && lp) {
+      netRef.current?.sendState({ x: lp.position.x, y: lp.position.y, z: lp.position.z, yaw: lp.yaw, pitch: lp.pitch, health: lp.health, armor: lp.armor, weapon: lp.weapon, ammo: lp.ammo, isAlive: lp.alive });
+      lastSendRef.current = now;
+    }
+
+    r?.renderMap();
     requestAnimationFrame(gameLoop);
   }
 
@@ -276,6 +301,8 @@ export default function CSGamePage() {
 
   return (
     <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', background: '#000', position: 'relative', fontFamily: 'monospace' }}>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+
       {status === 'team_select' && (
         <div style={{
           position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -321,12 +348,7 @@ export default function CSGamePage() {
         </div>
       )}
 
-      {/* Scoreboard */}
-      <div style={{
-        position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)',
-        display: 'flex', alignItems: 'center', gap: 16, background: 'rgba(0,0,0,0.6)',
-        padding: '6px 20px', borderRadius: 8, zIndex: 10, pointerEvents: 'none',
-      }}>
+      <div style={{ position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center', gap: 16, background: 'rgba(0,0,0,0.6)', padding: '6px 20px', borderRadius: 8, zIndex: 10, pointerEvents: 'none' }}>
         <div style={{ color: '#4488ff', fontWeight: 'bold', fontSize: 20 }}>{ctScore}</div>
         <div style={{ color: '#666', fontSize: 12, textAlign: 'center' }}>
           <div>Round {round}/{maxRounds}</div>
@@ -335,7 +357,6 @@ export default function CSGamePage() {
         <div style={{ color: '#ff6b35', fontWeight: 'bold', fontSize: 20 }}>{tScore}</div>
       </div>
 
-      {/* Killfeed */}
       <div style={{ position: 'absolute', top: 60, right: 12, display: 'flex', flexDirection: 'column', gap: 4, maxWidth: 280, zIndex: 10, pointerEvents: 'none' }}>
         {killfeed.slice(0, 5).map((k, i) => (
           <div key={i} style={{ background: 'rgba(0,0,0,0.5)', padding: '3px 8px', borderRadius: 4, fontSize: 11, color: '#ccc', whiteSpace: 'nowrap' }}>
@@ -346,7 +367,6 @@ export default function CSGamePage() {
         ))}
       </div>
 
-      {/* Health / Armor */}
       <div style={{ position: 'absolute', bottom: 16, left: 16, zIndex: 10, pointerEvents: 'none' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ color: '#ff4444', fontSize: 24 }}>♥</span>
@@ -355,13 +375,11 @@ export default function CSGamePage() {
         {armor > 0 && <div style={{ color: '#4488ff', fontSize: 14, marginTop: 2 }}>🛡 {armor}</div>}
       </div>
 
-      {/* Ammo */}
       <div style={{ position: 'absolute', bottom: 16, right: 16, textAlign: 'right', zIndex: 10, pointerEvents: 'none' }}>
         <div style={{ color: '#fff', fontSize: 28, fontWeight: 'bold' }}>{weapon === 'knife' ? '∞' : ammo}</div>
         <div style={{ color: '#888', fontSize: 12 }}>{WEAPONS[weapon].name}</div>
       </div>
 
-      {/* Crosshair */}
       {status === 'playing' && isAlive && (
         <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 10, pointerEvents: 'none' }}>
           <svg width="24" height="24" viewBox="0 0 24 24">
@@ -374,7 +392,6 @@ export default function CSGamePage() {
         </div>
       )}
 
-      {/* Click to play overlay */}
       {status === 'playing' && !pointerLocked && isAlive && (
         <div onClick={handleClick} style={{
           position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -387,7 +404,6 @@ export default function CSGamePage() {
         </div>
       )}
 
-      {/* Dead overlay */}
       {!isAlive && status === 'playing' && (
         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(180,0,0,0.3)', zIndex: 20, pointerEvents: 'none' }}>
           <div style={{ textAlign: 'center', color: '#fff' }}>
@@ -397,14 +413,12 @@ export default function CSGamePage() {
         </div>
       )}
 
-      {/* Countdown */}
       {countdown !== null && countdown > 0 && (
         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)', zIndex: 25, pointerEvents: 'none' }}>
           <div style={{ fontSize: 64, fontWeight: 'bold', color: '#fff' }}>{countdown}</div>
         </div>
       )}
 
-      {/* Three.js Canvas */}
       <div ref={canvasRef} onClick={handleClick} style={{ width: '100%', height: '100%' }} />
     </div>
   );
