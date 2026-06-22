@@ -34,7 +34,7 @@ export default class HNSGame {
   private pointerLocked = false;
   private mouseX = 0; mouseY = 0;
   private cameraEuler = new THREE.Euler(0, 0, 0, 'YXZ');
-  private players3D: Map<string, THREE.Mesh> = new Map();
+  private players3D: Map<string, THREE.Object3D> = new Map();
   private blocks3D: { mesh: THREE.Mesh; w: number; h: number; d: number }[] = [];
   private playerHeight = 1.7;
   private velocity = new THREE.Vector3();
@@ -65,8 +65,8 @@ export default class HNSGame {
 
   private init() {
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x87CEEB);
-    this.scene.fog = new THREE.Fog(0x87CEEB, 30, 80);
+    this.scene.background = new THREE.Color(0x7ec8e3);
+    this.scene.fog = new THREE.Fog(0x7ec8e3, 30, 80);
 
     this.camera = new THREE.PerspectiveCamera(75, this.container.clientWidth / this.container.clientHeight, 0.1, 200);
 
@@ -77,9 +77,13 @@ export default class HNSGame {
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.container.appendChild(this.renderer.domElement);
 
-    const ambient = new THREE.AmbientLight(0xffffff, 0.7);
+    const ambient = new THREE.AmbientLight(0x404040, 0.5);
     this.scene.add(ambient);
-    const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+
+    const hemi = new THREE.HemisphereLight(0x87CEEB, 0x555555, 0.5);
+    this.scene.add(hemi);
+
+    const dir = new THREE.DirectionalLight(0xfff5e6, 0.9);
     dir.position.set(30, 50, 30);
     dir.castShadow = true;
     dir.shadow.mapSize.set(2048, 2048);
@@ -89,14 +93,27 @@ export default class HNSGame {
     dir.shadow.camera.right = 60;
     dir.shadow.camera.top = 60;
     dir.shadow.camera.bottom = -60;
+    dir.shadow.bias = -0.001;
     this.scene.add(dir);
 
     const groundGeo = new THREE.PlaneGeometry(120, 120);
-    const groundMat = new THREE.MeshLambertMaterial({ color: 0x555555 });
+    const groundMat = new THREE.MeshLambertMaterial({ color: 0x556655 });
     this.groundPlane = new THREE.Mesh(groundGeo, groundMat);
     this.groundPlane.rotation.x = -Math.PI / 2;
+    this.groundPlane.position.y = 0;
     this.groundPlane.receiveShadow = true;
     this.scene.add(this.groundPlane);
+
+    const wallGeo = new THREE.BoxGeometry(120, 1.5, 0.4);
+    const wallMat = new THREE.MeshLambertMaterial({ color: 0x888888, transparent: true, opacity: 0.3 });
+    for (const side of [-60, 60]) {
+      const wallN = new THREE.Mesh(wallGeo, wallMat);
+      wallN.position.set(0, 0.75, side);
+      this.scene.add(wallN);
+      const wallS = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.5, 120), wallMat);
+      wallS.position.set(side, 0.75, 0);
+      this.scene.add(wallS);
+    }
   }
 
   connectToRoom(code: string, nickname: string) {
@@ -217,14 +234,37 @@ export default class HNSGame {
     this.blocks3D = [];
 
     for (const block of this.map) {
-      const geo = new THREE.BoxGeometry(block.w, block.h, block.d);
-      const mat = new THREE.MeshLambertMaterial({ color: block.color });
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.set(block.x, block.y, block.z);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      this.scene.add(mesh);
-      this.blocks3D.push({ mesh, w: block.w, h: block.h, d: block.d });
+      const group = new THREE.Group();
+      const baseColor = new THREE.Color(block.color);
+
+      const mainBlock = new THREE.Mesh(
+        new THREE.BoxGeometry(block.w, block.h, block.d),
+        new THREE.MeshLambertMaterial({ color: baseColor })
+      );
+      mainBlock.castShadow = true;
+      mainBlock.receiveShadow = true;
+      group.add(mainBlock);
+
+      const edgeMat = new THREE.MeshLambertMaterial({ color: baseColor.clone().multiplyScalar(0.7) });
+      const edgeT = 0.05;
+      const topEdge = new THREE.Mesh(new THREE.BoxGeometry(block.w + edgeT * 2, edgeT, block.d + edgeT * 2), edgeMat);
+      topEdge.position.y = block.h / 2 + edgeT / 2;
+      group.add(topEdge);
+
+      if (block.h > 1) {
+        for (const side of [-1, 1]) {
+          const stripe = new THREE.Mesh(
+            new THREE.BoxGeometry(block.w + 0.02, 0.06, block.d + 0.02),
+            new THREE.MeshLambertMaterial({ color: baseColor.clone().multiplyScalar(1.2) })
+          );
+          stripe.position.y = block.h * 0.3;
+          group.add(stripe);
+        }
+      }
+
+      group.position.set(block.x, block.y, block.z);
+      this.scene.add(group);
+      this.blocks3D.push({ mesh: group as any, w: block.w, h: block.h, d: block.d });
     }
   }
 
@@ -238,16 +278,68 @@ export default class HNSGame {
     for (const p of this.players) {
       let mesh = this.players3D.get(p.id);
       if (!mesh) {
-        mesh = new THREE.Mesh(
-          new THREE.BoxGeometry(0.8, 1.8, 0.8),
-          new THREE.MeshLambertMaterial({ color: new THREE.Color(p.currentColor) })
-        );
-        mesh.castShadow = true;
+        const group = new THREE.Group();
+        const color = new THREE.Color(p.currentColor);
+
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.7, 0.4), new THREE.MeshLambertMaterial({ color }));
+        body.position.y = 1.15;
+        body.castShadow = true;
+        group.add(body);
+
+        const head = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.35, 0.35), new THREE.MeshLambertMaterial({ color: 0xdeb887 }));
+        head.position.y = 1.7;
+        head.castShadow = true;
+        group.add(head);
+
+        const eyeWhite = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        const pupil = new THREE.MeshBasicMaterial({ color: 0x111111 });
+        for (const side of [-1, 1]) {
+          const eyeW = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.04, 0.02), eyeWhite);
+          eyeW.position.set(side * 0.06, 1.73, -0.18);
+          group.add(eyeW);
+          const pup = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.03, 0.02), pupil);
+          pup.position.set(side * 0.06, 1.73, -0.195);
+          group.add(pup);
+        }
+
+        for (const side of [-1, 1]) {
+          const arm = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.5, 0.15), new THREE.MeshLambertMaterial({ color }));
+          arm.position.set(side * 0.42, 1.15, 0);
+          group.add(arm);
+        }
+
+        for (const side of [-1, 1]) {
+          const leg = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.5, 0.18), new THREE.MeshLambertMaterial({ color: 0x333355 }));
+          leg.position.set(side * 0.12, 0.4, 0);
+          group.add(leg);
+        }
+
+        for (const side of [-1, 1]) {
+          const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.08, 0.22), new THREE.MeshLambertMaterial({ color: 0x222222 }));
+          shoe.position.set(side * 0.12, 0.04, -0.03);
+          group.add(shoe);
+        }
+
+        if (p.isSeeker) {
+          const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.3, 6), new THREE.MeshLambertMaterial({ color: 0xff0000 }));
+          antenna.position.set(0, 2.0, 0);
+          group.add(antenna);
+          const light = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 6), new THREE.MeshBasicMaterial({ color: 0xff0000 }));
+          light.position.set(0, 2.2, 0);
+          group.add(light);
+        }
+
+        mesh = group;
         this.scene.add(mesh);
         this.players3D.set(p.id, mesh);
       }
-      const mat = mesh.material as THREE.MeshLambertMaterial;
-      mat.color.setHex(p.currentColor);
+
+      const matMesh = mesh as THREE.Group;
+      const bodyMesh = matMesh.children[0] as THREE.Mesh;
+      if (bodyMesh) {
+        (bodyMesh.material as THREE.MeshLambertMaterial).color.setHex(p.currentColor);
+      }
+
       if (p.id === this.playerId) {
         mesh.visible = false;
       } else {
@@ -347,15 +439,17 @@ export default class HNSGame {
     }
 
     for (const block of this.blocks3D) {
+      const bx = block.mesh.position.x;
+      const bz = block.mesh.position.z;
       const bMin = new THREE.Vector3(
-        block.mesh.position.x - block.w / 2,
+        bx - block.w / 2,
         block.mesh.position.y - block.h / 2,
-        block.mesh.position.z - block.d / 2
+        bz - block.d / 2
       );
       const bMax = new THREE.Vector3(
-        block.mesh.position.x + block.w / 2,
+        bx + block.w / 2,
         block.mesh.position.y + block.h / 2,
-        block.mesh.position.z + block.d / 2
+        bz + block.d / 2
       );
 
       if (player.x > bMin.x - 0.4 && player.x < bMax.x + 0.4 &&
