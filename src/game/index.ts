@@ -105,8 +105,8 @@ export default class Game {
 
   private init() {
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x87CEEB);
-    this.scene.fog = new THREE.Fog(350, 1500);
+    this.scene.background = new THREE.Color(0x7ec8e3);
+    this.scene.fog = new THREE.Fog(0x7ec8e3, 200, 600);
 
     this.camera = new THREE.PerspectiveCamera(75, this.container.clientWidth / this.container.clientHeight, 0.1, 2000);
     this.camera.position.set(0, this.cameraHeight, 5);
@@ -118,18 +118,23 @@ export default class Game {
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.container.appendChild(this.renderer.domElement);
 
-    const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+    const ambient = new THREE.AmbientLight(0x404040, 0.5);
     this.scene.add(ambient);
-    const dir = new THREE.DirectionalLight(0xffffff, 1.0);
+
+    const hemi = new THREE.HemisphereLight(0x87CEEB, 0x4a8c3f, 0.6);
+    this.scene.add(hemi);
+
+    const dir = new THREE.DirectionalLight(0xfff5e6, 1.0);
     dir.position.set(50, 80, 30);
     dir.castShadow = true;
     dir.shadow.mapSize.set(2048, 2048);
     dir.shadow.camera.near = 0.5;
-    dir.shadow.camera.far = 400;
+    dir.shadow.camera.far = 500;
     dir.shadow.camera.left = -400;
     dir.shadow.camera.right = 400;
     dir.shadow.camera.top = 400;
     dir.shadow.camera.bottom = -400;
+    dir.shadow.bias = -0.001;
     this.scene.add(dir);
 
     this.createWeaponArms();
@@ -654,74 +659,110 @@ export default class Game {
     const group = new THREE.Group();
     const color = new THREE.Color(p.color);
     const skinColor = new THREE.Color(0xdeb887);
-    const darkSkin = new THREE.Color(0xc49a6c);
     const pantsColor = new THREE.Color(0x333355);
     const shoeColor = new THREE.Color(0x222222);
+    const hairColor = new THREE.Color(0x2a1a0a);
+    const darkColor = color.clone().multiplyScalar(0.7);
 
-    const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.25, 0.7, 12), new THREE.MeshLambertMaterial({ color }));
-    torso.position.y = 1.15;
+    const torso = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.55, 0.3), new THREE.MeshLambertMaterial({ color }));
+    torso.position.y = 1.2;
     torso.castShadow = true;
     group.add(torso);
 
-    const shoulders = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.12, 0.3), new THREE.MeshLambertMaterial({ color }));
-    shoulders.position.y = 1.45;
+    const collar = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.06, 0.2), new THREE.MeshLambertMaterial({ color: darkColor }));
+    collar.position.set(0, 1.48, -0.08);
+    group.add(collar);
+
+    const shoulders = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.08, 0.28), new THREE.MeshLambertMaterial({ color }));
+    shoulders.position.y = 1.48;
     group.add(shoulders);
 
-    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 0.12, 8), new THREE.MeshLambertMaterial({ color: skinColor }));
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 0.1, 8), new THREE.MeshLambertMaterial({ color: skinColor }));
     neck.position.y = 1.58;
     group.add(neck);
 
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 12, 10), new THREE.MeshLambertMaterial({ color: skinColor }));
-    head.position.y = 1.82;
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.28, 0.28), new THREE.MeshLambertMaterial({ color: skinColor }));
+    head.position.y = 1.8;
     head.castShadow = true;
     group.add(head);
+
+    const hair = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.12, 0.3), new THREE.MeshLambertMaterial({ color: hairColor }));
+    hair.position.set(0, 1.97, -0.01);
+    group.add(hair);
+
+    const hairBack = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.18, 0.08), new THREE.MeshLambertMaterial({ color: hairColor }));
+    hairBack.position.set(0, 1.89, 0.15);
+    group.add(hairBack);
 
     const eyeWhite = new THREE.MeshBasicMaterial({ color: 0xffffff });
     const pupil = new THREE.MeshBasicMaterial({ color: 0x111111 });
     for (const side of [-1, 1]) {
-      const eyeW = new THREE.Mesh(new THREE.SphereGeometry(0.035, 6, 6), eyeWhite);
-      eyeW.position.set(side * 0.07, 1.85, -0.16);
+      const eyeW = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.03, 0.02), eyeWhite);
+      eyeW.position.set(side * 0.06, 1.83, -0.14);
       group.add(eyeW);
-      const pup = new THREE.Mesh(new THREE.SphereGeometry(0.02, 6, 6), pupil);
-      pup.position.set(side * 0.07, 1.85, -0.19);
+      const pup = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.025, 0.02), pupil);
+      pup.position.set(side * 0.06, 1.83, -0.155);
       group.add(pup);
     }
 
-    const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.015, 0.02), new THREE.MeshBasicMaterial({ color: 0x8b4513 }));
-    mouth.position.set(0, 1.75, -0.19);
+    const eyebrow = new THREE.MeshBasicMaterial({ color: 0x1a1a1a });
+    for (const side of [-1, 1]) {
+      const brow = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.012, 0.02), eyebrow);
+      brow.position.set(side * 0.06, 1.87, -0.145);
+      group.add(brow);
+    }
+
+    const nose = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.04, 0.04), new THREE.MeshLambertMaterial({ color: skinColor.clone().multiplyScalar(0.9) }));
+    nose.position.set(0, 1.79, -0.15);
+    group.add(nose);
+
+    const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.015, 0.02), new THREE.MeshBasicMaterial({ color: 0x8b4513 }));
+    mouth.position.set(0, 1.73, -0.14);
     group.add(mouth);
 
-    const lArm = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.055, 0.55, 8), new THREE.MeshLambertMaterial({ color }));
-    lArm.position.set(-0.38, 1.15, 0);
-    group.add(lArm);
-    const lForearm = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.45, 8), new THREE.MeshLambertMaterial({ color: skinColor }));
-    lForearm.position.set(-0.38, 0.65, 0);
-    group.add(lForearm);
+    for (const side of [-1, 1]) {
+      const ear = new THREE.Mesh(new THREE.SphereGeometry(0.03, 6, 6), new THREE.MeshLambertMaterial({ color: skinColor }));
+      ear.position.set(side * 0.16, 1.8, 0);
+      group.add(ear);
+    }
 
-    const rArm = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.055, 0.55, 8), new THREE.MeshLambertMaterial({ color }));
-    rArm.position.set(0.38, 1.15, 0);
-    group.add(rArm);
-    const rForearm = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.45, 8), new THREE.MeshLambertMaterial({ color: skinColor }));
-    rForearm.position.set(0.38, 0.65, 0);
-    group.add(rForearm);
+    for (const side of [-1, 1]) {
+      const upperArm = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.055, 0.3, 8), new THREE.MeshLambertMaterial({ color }));
+      upperArm.position.set(side * 0.34, 1.25, 0);
+      group.add(upperArm);
+      const forearm = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.28, 8), new THREE.MeshLambertMaterial({ color: skinColor }));
+      forearm.position.set(side * 0.34, 0.78, 0);
+      group.add(forearm);
+      const hand = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.08), new THREE.MeshLambertMaterial({ color: skinColor }));
+      hand.position.set(side * 0.34, 0.6, -0.02);
+      group.add(hand);
+    }
 
-    const lLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.075, 0.55, 8), new THREE.MeshLambertMaterial({ color: pantsColor }));
-    lLeg.position.set(-0.13, 0.5, 0);
-    group.add(lLeg);
-    const rLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.075, 0.55, 8), new THREE.MeshLambertMaterial({ color: pantsColor }));
-    rLeg.position.set(0.13, 0.5, 0);
-    group.add(rLeg);
+    for (const side of [-1, 1]) {
+      const upperLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.065, 0.35, 8), new THREE.MeshLambertMaterial({ color: pantsColor }));
+      upperLeg.position.set(side * 0.11, 0.58, 0);
+      group.add(upperLeg);
+      const lowerLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.055, 0.35, 8), new THREE.MeshLambertMaterial({ color: pantsColor }));
+      lowerLeg.position.set(side * 0.11, 0.25, 0);
+      group.add(lowerLeg);
+      const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.07, 0.2), new THREE.MeshLambertMaterial({ color: shoeColor }));
+      shoe.position.set(side * 0.11, 0.035, -0.03);
+      group.add(shoe);
+    }
 
-    const lShoe = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, 0.18), new THREE.MeshLambertMaterial({ color: shoeColor }));
-    lShoe.position.set(-0.13, 0.04, -0.03);
-    group.add(lShoe);
-    const rShoe = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, 0.18), new THREE.MeshLambertMaterial({ color: shoeColor }));
-    rShoe.position.set(0.13, 0.04, -0.03);
-    group.add(rShoe);
-
-    const belt = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.06, 12), new THREE.MeshLambertMaterial({ color: 0x222222 }));
-    belt.position.y = 0.82;
+    const belt = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.05, 0.32), new THREE.MeshLambertMaterial({ color: 0x222222 }));
+    belt.position.y = 0.92;
     group.add(belt);
+    const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.04, 0.03), new THREE.MeshLambertMaterial({ color: 0xcccccc }));
+    buckle.position.set(0, 0.92, -0.17);
+    group.add(buckle);
+
+    const pocketL = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.08, 0.02), new THREE.MeshLambertMaterial({ color: darkColor }));
+    pocketL.position.set(-0.14, 1.0, -0.16);
+    group.add(pocketL);
+    const pocketR = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.08, 0.02), new THREE.MeshLambertMaterial({ color: darkColor }));
+    pocketR.position.set(0.14, 1.0, -0.16);
+    group.add(pocketR);
 
     const hpRatio = p.health / 100;
     const hpBarBg = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.08), new THREE.MeshBasicMaterial({ color: 0x333333, side: THREE.DoubleSide }));
@@ -799,6 +840,7 @@ export default class Game {
 
     this.createRoads();
     this.createPlaza();
+    this.createEnvironment();
 
     for (const v of vehicles) {
       v.y = 0.5;
@@ -817,6 +859,8 @@ export default class Game {
     const roadMat = new THREE.MeshLambertMaterial({ color: 0x2a2a2a });
     const sidewalkMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
     const dashMat = new THREE.MeshBasicMaterial({ color: 0xdddddd });
+    const edgeLineMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const bikeMat = new THREE.MeshBasicMaterial({ color: 0x44aa44 });
 
     const addRoad = (cx: number, cz: number, w: number, d: number) => {
       const road = new THREE.Mesh(new THREE.BoxGeometry(w, 0.08, d), roadMat);
@@ -826,8 +870,9 @@ export default class Game {
     };
 
     const addSidewalk = (cx: number, cz: number, w: number, d: number) => {
-      const sw = new THREE.Mesh(new THREE.BoxGeometry(w, 0.12, d), sidewalkMat);
-      sw.position.set(cx, 0.06, cz);
+      const sw = new THREE.Mesh(new THREE.BoxGeometry(w, 0.18, d), sidewalkMat);
+      sw.position.set(cx, 0.09, cz);
+      sw.receiveShadow = true;
       this.scene.add(sw);
     };
 
@@ -840,21 +885,47 @@ export default class Game {
       this.scene.add(mesh);
     };
 
+    const addEdgeLine = (cx: number, cz: number, horizontal: boolean, len: number) => {
+      const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(horizontal ? len : 0.08, 0.09, horizontal ? 0.08 : len),
+        edgeLineMat
+      );
+      mesh.position.set(cx, 0.1, cz);
+      this.scene.add(mesh);
+    };
+
     addRoad(0, 0, 30, 800);
     addSidewalk(-16.5, 0, 3, 800);
     addSidewalk(16.5, 0, 3, 800);
+    addEdgeLine(-14.8, 0, false, 800);
+    addEdgeLine(14.8, 0, false, 800);
     for (let z = -400; z < 400; z += 10) {
       addDash(0, z, false);
     }
 
-    const crossRoads = [-300, -150, 0, 150, 300];
+    const crossRoads = [-300, -150, 150, 300];
     for (const cz of crossRoads) {
-      if (cz === 0) continue;
       addRoad(0, cz, 800, 12);
       addSidewalk(0, cz - 7.5, 800, 3);
       addSidewalk(0, cz + 7.5, 800, 3);
+      addEdgeLine(0, cz - 5.8, true, 800);
+      addEdgeLine(0, cz + 5.8, true, 800);
       for (let x = -400; x < 400; x += 10) {
         addDash(x, cz, true);
+      }
+    }
+
+    for (const sidewalkEdge of [-18, 18]) {
+      for (let z = -400; z < 400; z += 2) {
+        if (Math.abs(z) < 8) continue;
+        let blocked = false;
+        for (const cz of crossRoads) {
+          if (Math.abs(z - cz) < 8) { blocked = true; break; }
+        }
+        if (blocked) continue;
+        const curb = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.06, 2), new THREE.MeshLambertMaterial({ color: 0xaaaaaa }));
+        curb.position.set(sidewalkEdge + (sidewalkEdge < 0 ? -1.5 : 1.5), 0.18, z);
+        this.scene.add(curb);
       }
     }
   }
@@ -867,18 +938,223 @@ export default class Game {
     plaza.receiveShadow = true;
     this.scene.add(plaza);
 
-    const fountainMat = new THREE.MeshLambertMaterial({ color: 0x889999 });
-    const fountain = new THREE.Mesh(new THREE.CylinderGeometry(3.5, 4, 1.2, 20), fountainMat);
-    fountain.position.set(0, 0.6, 0);
-    fountain.castShadow = true;
-    this.scene.add(fountain);
+    const fountainBaseMat = new THREE.MeshLambertMaterial({ color: 0x889999 });
+    const fountainBase = new THREE.Mesh(new THREE.CylinderGeometry(4.5, 5, 0.8, 24), fountainBaseMat);
+    fountainBase.position.set(0, 0.4, 0);
+    fountainBase.castShadow = true;
+    this.scene.add(fountainBase);
+
+    const fountainPillar = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.8, 2.0, 12), fountainBaseMat);
+    fountainPillar.position.set(0, 1.8, 0);
+    fountainPillar.castShadow = true;
+    this.scene.add(fountainPillar);
+
+    const fountainTop = new THREE.Mesh(new THREE.CylinderGeometry(2.0, 1.2, 0.5, 16), fountainBaseMat);
+    fountainTop.position.set(0, 3.0, 0);
+    fountainTop.castShadow = true;
+    this.scene.add(fountainTop);
 
     const water = new THREE.Mesh(
-      new THREE.CylinderGeometry(3.1, 3.1, 0.15, 20),
-      new THREE.MeshLambertMaterial({ color: 0x3388cc, transparent: true, opacity: 0.75 })
+      new THREE.CylinderGeometry(3.8, 3.8, 0.2, 24),
+      new THREE.MeshLambertMaterial({ color: 0x3388cc, transparent: true, opacity: 0.7 })
     );
-    water.position.set(0, 1.25, 0);
+    water.position.set(0, 0.85, 0);
     this.scene.add(water);
+
+    const topWater = new THREE.Mesh(
+      new THREE.CylinderGeometry(1.8, 1.8, 0.1, 16),
+      new THREE.MeshLambertMaterial({ color: 0x3388cc, transparent: true, opacity: 0.7 })
+    );
+    topWater.position.set(0, 3.3, 0);
+    this.scene.add(topWater);
+
+    for (let i = 0; i < 8; i++) {
+      const angle = (i / 8) * Math.PI * 2;
+      const bx = Math.cos(angle) * 15;
+      const bz = Math.sin(angle) * 15;
+      this.createBench(bx, bz, angle + Math.PI / 2);
+    }
+
+    for (let i = 0; i < 4; i++) {
+      const angle = (i / 4) * Math.PI * 2 + Math.PI / 4;
+      const lx = Math.cos(angle) * 25;
+      const lz = Math.sin(angle) * 25;
+      this.createStreetLight(lx, lz);
+    }
+  }
+
+  private createBench(x: number, z: number, rotation: number) {
+    const group = new THREE.Group();
+    const woodMat = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
+    const metalMat = new THREE.MeshLambertMaterial({ color: 0x444444 });
+
+    const seat = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.06, 0.45), woodMat);
+    seat.position.set(0, 0.45, 0);
+    seat.castShadow = true;
+    group.add(seat);
+
+    const back = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.4, 0.05), woodMat);
+    back.position.set(0, 0.7, 0.2);
+    back.rotation.x = -0.15;
+    back.castShadow = true;
+    group.add(back);
+
+    for (const sx of [-0.55, 0.55]) {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.45, 0.4), metalMat);
+      leg.position.set(sx, 0.22, 0);
+      group.add(leg);
+    }
+
+    for (const sx of [-0.55, 0.55]) {
+      const armrest = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.2, 0.04), metalMat);
+      armrest.position.set(sx, 0.55, 0.18);
+      group.add(armrest);
+    }
+
+    group.position.set(x, 0, z);
+    group.rotation.y = rotation;
+    this.scene.add(group);
+  }
+
+  private createStreetLight(x: number, z: number) {
+    const group = new THREE.Group();
+    const poleMat = new THREE.MeshLambertMaterial({ color: 0x555555 });
+    const lightMat = new THREE.MeshBasicMaterial({ color: 0xffffcc });
+
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, 6, 8), poleMat);
+    pole.position.set(0, 3, 0);
+    pole.castShadow = true;
+    group.add(pole);
+
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 1.2), poleMat);
+    arm.position.set(0, 5.8, 0.6);
+    group.add(arm);
+
+    const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 8), lightMat);
+    lamp.position.set(0, 5.7, 1.2);
+    group.add(lamp);
+
+    const pointLight = new THREE.PointLight(0xffffcc, 0.5, 20);
+    pointLight.position.set(0, 5.5, 1.2);
+    group.add(pointLight);
+
+    group.position.set(x, 0, z);
+    this.scene.add(group);
+  }
+
+  private createTree(x: number, z: number, scale: number = 1) {
+    const group = new THREE.Group();
+    const trunkMat = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
+    const leafMats = [
+      new THREE.MeshLambertMaterial({ color: 0x228B22 }),
+      new THREE.MeshLambertMaterial({ color: 0x2E8B57 }),
+      new THREE.MeshLambertMaterial({ color: 0x3CB371 }),
+    ];
+
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.15 * scale, 0.25 * scale, 2.5 * scale, 8), trunkMat);
+    trunk.position.y = 1.25 * scale;
+    trunk.castShadow = true;
+    group.add(trunk);
+
+    const leafMat = leafMats[Math.floor(Math.random() * leafMats.length)];
+
+    for (let i = 0; i < 3; i++) {
+      const radius = (1.8 - i * 0.4) * scale;
+      const height = (1.5 - i * 0.2) * scale;
+      const leaves = new THREE.Mesh(new THREE.ConeGeometry(radius, height, 8), leafMat);
+      leaves.position.y = (3.0 + i * 1.0) * scale;
+      leaves.castShadow = true;
+      group.add(leaves);
+    }
+
+    group.position.set(x, 0, z);
+    this.scene.add(group);
+  }
+
+  private createTrashCan(x: number, z: number) {
+    const group = new THREE.Group();
+    const bodyMat = new THREE.MeshLambertMaterial({ color: 0x336633 });
+    const rimMat = new THREE.MeshLambertMaterial({ color: 0x444444 });
+
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.28, 0.65, 10), bodyMat);
+    body.position.y = 0.32;
+    body.castShadow = true;
+    group.add(body);
+
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.23, 0.025, 6, 12), rimMat);
+    rim.position.y = 0.65;
+    rim.rotation.x = Math.PI / 2;
+    group.add(rim);
+
+    const lid = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.04, 10), rimMat);
+    lid.position.y = 0.67;
+    group.add(lid);
+
+    group.position.set(x, 0, z);
+    this.scene.add(group);
+  }
+
+  private createEnvironment() {
+    const halfWorld = this.worldSize / 2;
+    const treePositions: [number, number, number][] = [];
+    const rng = (seed: number) => {
+      let s = seed;
+      return () => { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; };
+    };
+    const rand = rng(42);
+
+    for (let i = 0; i < 80; i++) {
+      const x = (rand() - 0.5) * (halfWorld * 1.6);
+      const z = (rand() - 0.5) * (halfWorld * 1.6);
+      const onRoad = Math.abs(x) < 18 || Math.abs(z) < 8 ||
+        [-300, -150, 150, 300].some(rz => Math.abs(z - rz) < 8);
+      const onPlaza = Math.hypot(x, z) < 50;
+      let inHouse = false;
+      for (const b of this.houseBounds) {
+        if (x > b.minX - 3 && x < b.maxX + 3 && z > b.minZ - 3 && z < b.maxZ + 3) {
+          inHouse = true;
+          break;
+        }
+      }
+      if (onRoad || onPlaza || inHouse) continue;
+      const scale = 0.7 + rand() * 0.8;
+      treePositions.push([x, z, scale]);
+    }
+
+    for (const [tx, tz, ts] of treePositions) {
+      this.createTree(tx, tz, ts);
+    }
+
+    const lightPositions: [number, number][] = [];
+    for (let z = -350; z <= 350; z += 40) {
+      if (Math.abs(z) < 20) continue;
+      lightPositions.push([-18, z]);
+      lightPositions.push([18, z]);
+    }
+    for (let x = -350; x <= 350; x += 40) {
+      if (Math.abs(x) < 20) continue;
+      lightPositions.push([x, -18]);
+      lightPositions.push([x, 18]);
+    }
+    for (const [lx, lz] of lightPositions) {
+      let blocked = false;
+      for (const b of this.houseBounds) {
+        if (lx > b.minX - 1 && lx < b.maxX + 1 && lz > b.minZ - 1 && lz < b.maxZ + 1) {
+          blocked = true;
+          break;
+        }
+      }
+      if (!blocked) this.createStreetLight(lx, lz);
+    }
+
+    for (let i = 0; i < 20; i++) {
+      const angle = rand() * Math.PI * 2;
+      const dist = 50 + rand() * 100;
+      const bx = Math.cos(angle) * dist;
+      const bz = Math.sin(angle) * dist;
+      if (Math.hypot(bx, bz) < 50) continue;
+      this.createTrashCan(bx, bz);
+    }
   }
 
   private createVehicle3D(vehicle: VehicleData) {
@@ -1053,6 +1329,68 @@ export default class Game {
       addTailights(1.8);
       addBumper(-1.85);
       addBumper(1.85);
+    } else if (model === 'Pickup') {
+      const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.6, 1.8), bodyMat);
+      cabin.position.set(0, 0.55, -1.2);
+      cabin.castShadow = true;
+      group.add(cabin);
+      const cabinRoof = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.12, 1.6), bodyMat);
+      cabinRoof.position.set(0, 0.91, -1.2);
+      group.add(cabinRoof);
+      const cabGlass = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.35, 0.05), glassMat);
+      cabGlass.position.set(0, 0.65, -2.08);
+      group.add(cabGlass);
+      const bed = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.4, 2.0), new THREE.MeshLambertMaterial({ color: 0x555555 }));
+      bed.position.set(0, 0.35, 0.8);
+      group.add(bed);
+      const rail1 = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.35, 2.0), blackMat);
+      rail1.position.set(-0.85, 0.72, 0.8);
+      group.add(rail1);
+      const rail2 = rail1.clone();
+      rail2.position.x = 0.85;
+      group.add(rail2);
+      const backGate = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.3, 0.05), blackMat);
+      backGate.position.set(0, 0.65, 1.8);
+      group.add(backGate);
+      const sideStep1 = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.06, 1.4), blackMat);
+      sideStep1.position.set(-0.95, 0.18, -0.3);
+      group.add(sideStep1);
+      const sideStep2 = sideStep1.clone();
+      sideStep2.position.x = 0.95;
+      group.add(sideStep2);
+      addWheels([[-0.9, 0.3, 1.3], [0.9, 0.3, 1.3], [-0.9, 0.3, -1.2], [0.9, 0.3, -1.2]]);
+      addHeadlights(-2.1);
+      addTailights(1.8);
+      addBumper(-2.15);
+    } else if (model === 'Van') {
+      const body = new THREE.Mesh(new THREE.BoxGeometry(2.0, 1.1, 4.5), bodyMat);
+      body.position.y = 0.75;
+      body.castShadow = true;
+      group.add(body);
+      const roof = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.08, 4.3), bodyMat);
+      roof.position.set(0, 1.34, 0);
+      group.add(roof);
+      const windshield = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.5, 0.05), glassMat);
+      windshield.position.set(0, 0.85, -2.25);
+      group.add(windshield);
+      const rearWindow = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.35, 0.05), glassMat);
+      rearWindow.position.set(0, 0.9, 2.25);
+      group.add(rearWindow);
+      for (const side of [-1, 1]) {
+        for (let i = 0; i < 3; i++) {
+          const sideWin = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.35, 0.6), glassMat);
+          sideWin.position.set(side * 1.01, 0.9, -1.0 + i * 1.2);
+          group.add(sideWin);
+        }
+      }
+      const sliding = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.8, 1.4), new THREE.MeshLambertMaterial({ color: new THREE.Color(vehicle.color).multiplyScalar(0.9).getHex() }));
+      sliding.position.set(1.03, 0.65, 0.5);
+      group.add(sliding);
+      addWheels([[-0.9, 0.3, 1.5], [0.9, 0.3, 1.5], [-0.9, 0.3, -1.5], [0.9, 0.3, -1.5]]);
+      addHeadlights(-2.25);
+      addTailights(2.25);
+      addBumper(-2.3);
+      addBumper(2.3);
     }
 
     const mirrorGeo = new THREE.BoxGeometry(0.08, 0.06, 0.12);
@@ -1086,6 +1424,11 @@ export default class Game {
     const roofMat = new THREE.MeshLambertMaterial({ color: roofColor ?? 0x555555 });
     const stairMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
     const parapetMat = new THREE.MeshLambertMaterial({ color });
+    const windowMat = new THREE.MeshBasicMaterial({ color: 0x88aacc, transparent: true, opacity: 0.6 });
+    const windowFrameMat = new THREE.MeshLambertMaterial({ color: 0x555555 });
+    const doorFrameMat = new THREE.MeshLambertMaterial({ color: 0x4a3520 });
+    const doorMat = new THREE.MeshLambertMaterial({ color: 0x6b3a1f });
+    const trimMat = new THREE.MeshLambertMaterial({ color: new THREE.Color(color).multiplyScalar(0.85).getHex() });
 
     const addBox = (cx: number, cy: number, cz: number, bw: number, bh: number, bd: number, mat: THREE.Material, cast = true) => {
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, bd), mat);
@@ -1146,6 +1489,77 @@ export default class Game {
       });
     }
 
+    const trimH = 0.12;
+    addBox(0, groundY + trimH / 2, -hd - 0.01, w + 0.1, trimH, 0.06, trimMat);
+    addBox(0, groundY + trimH / 2, hd + 0.01, w + 0.1, trimH, 0.06, trimMat);
+    addBox(-hw - 0.01, groundY + trimH / 2, 0, 0.06, trimH, d + 0.1, trimMat);
+    addBox(hw + 0.01, groundY + trimH / 2, 0, 0.06, trimH, d + 0.1, trimMat);
+
+    for (let f = 0; f < floors; f++) {
+      const fy = groundY + f * floorH + floorH * 0.5;
+      if (fy > groundY + hh - 0.5) continue;
+
+      const windowW = 0.6;
+      const windowH = 0.8;
+      const windowFrameT = 0.06;
+
+      for (const side of [0, 1, 2, 3]) {
+        if (side === doorSide && f === 0) {
+          const dw = 1.0;
+          const dh = 2.2;
+          let doorX = 0, doorZ = 0, doorRotY = 0;
+          if (side === 0) { doorX = 0; doorZ = -hd - 0.02; doorRotY = 0; }
+          else if (side === 1) { doorX = hw + 0.02; doorZ = 0; doorRotY = Math.PI / 2; }
+          else if (side === 2) { doorX = 0; doorZ = hd + 0.02; doorRotY = Math.PI; }
+          else { doorX = -hw - 0.02; doorZ = 0; doorRotY = -Math.PI / 2; }
+
+          addBox(doorX, groundY + dh / 2, doorZ, dw + 0.15, dh + 0.08, 0.1, doorFrameMat, false);
+          addBox(doorX, groundY + dh / 2, doorZ, dw, dh, 0.08, doorMat, false);
+          const knobX = doorX + (side === 1 ? 0.05 : side === 3 ? -0.05 : (side === 0 ? 0.35 : -0.35));
+          const knobZ = doorZ + (side === 0 ? -0.05 : side === 2 ? 0.05 : 0);
+          const knob = new THREE.Mesh(new THREE.SphereGeometry(0.04, 6, 6), new THREE.MeshLambertMaterial({ color: 0xccaa44 }));
+          knob.position.set(knobX, groundY + 1.1, knobZ);
+          knob.castShadow = false;
+          group.add(knob);
+        } else {
+          const winCount = (side === 0 || side === 2) ? Math.max(1, Math.floor(w / 3)) : Math.max(1, Math.floor(d / 3));
+          for (let wi = 0; wi < winCount; wi++) {
+            const totalSide = (side === 0 || side === 2) ? w : d;
+            const spacing = totalSide / (winCount + 1);
+            const offset = -totalSide / 2 + spacing * (wi + 1);
+            let wx = 0, wz = 0, wrY = 0;
+            if (side === 0) { wx = offset; wz = -hd - 0.02; wrY = 0; }
+            else if (side === 1) { wx = hw + 0.02; wz = offset; wrY = Math.PI / 2; }
+            else if (side === 2) { wx = offset; wz = hd + 0.02; wrY = Math.PI; }
+            else { wx = -hw - 0.02; wz = offset; wrY = -Math.PI / 2; }
+
+            const winFrame = new THREE.Mesh(new THREE.BoxGeometry(windowW + windowFrameT * 2, windowH + windowFrameT * 2, 0.08), windowFrameMat);
+            winFrame.position.set(x + wx, fy, z + wz);
+            winFrame.rotation.y = wrY;
+            winFrame.castShadow = false;
+            group.add(winFrame);
+
+            const winGlass = new THREE.Mesh(new THREE.BoxGeometry(windowW, windowH, 0.05), windowMat);
+            winGlass.position.set(x + wx, fy, z + wz);
+            winGlass.rotation.y = wrY;
+            winGlass.castShadow = false;
+            group.add(winGlass);
+
+            const crossH = new THREE.Mesh(new THREE.BoxGeometry(windowW, 0.03, 0.06), windowFrameMat);
+            crossH.position.set(x + wx, fy, z + wz);
+            crossH.rotation.y = wrY;
+            crossH.castShadow = false;
+            group.add(crossH);
+            const crossV = new THREE.Mesh(new THREE.BoxGeometry(0.03, windowH, 0.06), windowFrameMat);
+            crossV.position.set(x + wx, fy, z + wz);
+            crossV.rotation.y = wrY;
+            crossV.castShadow = false;
+            group.add(crossV);
+          }
+        }
+      }
+    }
+
     if (floors >= 2) {
       const stairW = 1.8;
       const stairLen = Math.min(w, d) * 0.6;
@@ -1190,6 +1604,19 @@ export default class Game {
       addBox(0, roofY + pWallH / 2, hd, w + pWallT * 2, pWallH, pWallT, parapetMat);
       addBox(-hw, roofY + pWallH / 2, 0, pWallT, pWallH, d, parapetMat);
       addBox(hw, roofY + pWallH / 2, 0, pWallT, pWallH, d, parapetMat);
+    }
+
+    if (floors === 1 && hh <= 4) {
+      const roofY = groundY + hh;
+      const roofPeak = roofY + 1.2;
+      const roofOverhang = 0.5;
+      for (let i = 0; i < 4; i++) {
+        const t = i / 3;
+        const ry = roofY + t * 1.2;
+        const rw = w + roofOverhang * 2 * (1 - t);
+        const rd = d + roofOverhang * 2 * (1 - t);
+        addBox(0, ry + 0.08, 0, rw, 0.16, rd, roofMat);
+      }
     }
 
     group.position.set(0, 0, 0);
@@ -1677,10 +2104,6 @@ export default class Game {
     } else {
       this.openShop();
     }
-  }
-
-  private isMobileDevice(): boolean {
-    return /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || ('ontouchstart' in window && window.innerWidth < 1024);
   }
 
   private openShop() {

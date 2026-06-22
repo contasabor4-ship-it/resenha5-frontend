@@ -16,7 +16,7 @@
     "react": "^18",
     "react-dom": "^18",
     "socket.io-client": "^4.7.5",
-    "three": "^0.160.0"
+    "three": "^0.160.1"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
