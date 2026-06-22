@@ -1,45 +1,41 @@
 'use client';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import dynamic from 'next/dynamic';
-import { createCSNetworkClient, CSNetworkClient } from '../../../lib/cs/network/client';
-import { CSRoomState, CSPlayerState, WeaponType, WEAPONS } from '../../../lib/cs/types';
+import { createCSNetworkClient } from '../../../lib/cs/network/client';
+import { WeaponType, WEAPONS } from '../../../lib/cs/types';
 import { DUST2 } from '../../../lib/cs/maps/dust2';
-import { createLocalPlayer, updateLocalPlayer, LocalPlayerState } from '../../../lib/cs/engine/player';
-import { createEnemyManager, EnemyManager } from '../../../lib/cs/engine/enemies';
-import * as THREE from 'three';
-
-const HUD = dynamic(() => import('../../../components/cs/HUD'), { ssr: false });
 
 const CS_SERVER_URL = process.env.NEXT_PUBLIC_CS_SERVER_URL || process.env.NEXT_PUBLIC_GAME_SERVER_URL || '';
 
 export default function CSGamePage() {
   const router = useRouter();
   const [nickname, setNickname] = useState('');
-  const [teamSelect, setTeamSelect] = useState<'CT' | 'T' | null>(null);
-  const [joined, setJoined] = useState(false);
-  const [room, setRoom] = useState<CSRoomState | null>(null);
-  const [localHealth, setLocalHealth] = useState(100);
-  const [localArmor, setLocalArmor] = useState(0);
-  const [localAmmo, setLocalAmmo] = useState(30);
-  const [localWeapon, setLocalWeapon] = useState<WeaponType>('ak47');
+  const [team, setTeam] = useState<'CT' | 'T' | null>(null);
+  const [status, setStatus] = useState<'team_select' | 'connecting' | 'playing'>('team_select');
+  const [health, setHealth] = useState(100);
+  const [armor, setArmor] = useState(0);
+  const [ammo, setAmmo] = useState(30);
+  const [weapon, setWeapon] = useState<WeaponType>('ak47');
+  const [ctScore, setCtScore] = useState(0);
+  const [tScore, setTScore] = useState(0);
+  const [round, setRound] = useState(0);
+  const [maxRounds, setMaxRounds] = useState(15);
+  const [timeLeft, setTimeLeft] = useState(0);
   const [killfeed, setKillfeed] = useState<Array<{ killer: string; victim: string; weapon: WeaponType; headshot: boolean }>>([]);
-  const [pointerLocked, setPointerLocked] = useState(false);
-  const [gameStarted, setGameStarted] = useState(false);
+  const [isAlive, setIsAlive] = useState(true);
   const [countdown, setCountdown] = useState<number | null>(null);
-  const [alive, setAlive] = useState(true);
+  const [pointerLocked, setPointerLocked] = useState(false);
+
   const canvasRef = useRef<HTMLDivElement>(null);
-  const networkRef = useRef<CSNetworkClient | null>(null);
-  const localPlayerRef = useRef<LocalPlayerState | null>(null);
-  const enemyManagerRef = useRef<EnemyManager>(createEnemyManager());
-  const pointerLockedRef = useRef(false);
-  const inputRef = useRef({
-    forward: false, backward: false, left: false, right: false,
-    jump: false, crouch: false, sprint: false, shooting: false,
-    yaw: 0, pitch: 0, weapon: 'ak47' as WeaponType,
-  });
-  const lastStateSendRef = useRef(0);
+  const rendererRef = useRef<any>(null);
+  const netRef = useRef<any>(null);
+  const lpRef = useRef<any>(null);
+  const enemiesRef = useRef<any>({ enemies: [] });
+  const inputRef = useRef({ forward: false, backward: false, left: false, right: false, jump: false, crouch: false, sprint: false, shooting: false, yaw: 0, pitch: 0, weapon: 'ak47' as WeaponType });
   const recoilRef = useRef(0);
+  const lastSendRef = useRef(0);
+  const plLockedRef = useRef(false);
+  const gameRunningRef = useRef(false);
 
   useEffect(() => {
     const saved = localStorage.getItem('r5_nickname');
@@ -47,261 +43,353 @@ export default function CSGamePage() {
     setNickname(saved);
   }, []);
 
-  useEffect(() => {
-    pointerLockedRef.current = pointerLocked;
-  }, [pointerLocked]);
+  useEffect(() => { plLockedRef.current = pointerLocked; }, [pointerLocked]);
 
-  const handleTeamSelect = useCallback((team: 'CT' | 'T') => {
-    setTeamSelect(team);
+  const startGame = useCallback(async (selectedTeam: 'CT' | 'T') => {
+    setTeam(selectedTeam);
+    setStatus('connecting');
+
+    const { createCSRenderer } = await import('../../../lib/cs/engine/renderer');
+    const { createLocalPlayer } = await import('../../../lib/cs/engine/player');
+    const { createEnemyManager } = await import('../../../lib/cs/engine/enemies');
+
+    const renderer = createCSRenderer();
+    renderer.init(canvasRef.current!);
+    renderer.buildMap(DUST2);
+    renderer.switchWeapon(selectedTeam === 'CT' ? 'm4a1' : 'ak47');
+    rendererRef.current = renderer;
+
+    const defaultWeapon: WeaponType = selectedTeam === 'CT' ? 'm4a1' : 'ak47';
+    const spawn = selectedTeam === 'CT' ? DUST2.spawnCT : DUST2.spawnT;
+    lpRef.current = createLocalPlayer(spawn, selectedTeam);
+    enemiesRef.current = createEnemyManager();
+
     const net = createCSNetworkClient();
-    networkRef.current = net;
-    net.connect(CS_SERVER_URL, nickname);
+    netRef.current = net;
 
-    net.onMatchJoined((data) => {
-      setJoined(true);
-      const myPlayer = data.players.find(p => p.id === data.playerId);
-      const playerTeam = myPlayer?.team || team;
-      const weapon: WeaponType = playerTeam === 'CT' ? 'm4a1' : 'ak47';
-      localPlayerRef.current = createLocalPlayer(playerTeam === 'CT' ? DUST2.spawnCT : DUST2.spawnT, playerTeam);
-      setLocalWeapon(weapon);
-      setLocalAmmo(WEAPONS[weapon].ammo);
-      setAlive(true);
-
+    net.onMatchJoined((data: any) => {
+      const me = data.players.find((p: any) => p.id === data.playerId);
+      if (me) {
+        lpRef.current.x = me.x; lpRef.current.y = me.y; lpRef.current.z = me.z;
+        lpRef.current.health = me.health; lpRef.current.weapon = me.weapon; lpRef.current.ammo = me.ammo;
+        setHealth(me.health); setAmmo(me.ammo); setWeapon(me.weapon);
+      }
       if (data.match.phase === 'playing') {
+        setStatus('playing');
         setGameStarted(true);
-        setRoom({ code: '', ...data.match, players: data.players });
       } else {
-        setRoom({ code: '', ...data.match, players: data.players });
+        setStatus('playing');
+      }
+      setRound(data.match.round || 0);
+      setMaxRounds(data.match.maxRounds || 15);
+      setCtScore(data.match.ctScore || 0);
+      setTScore(data.match.tScore || 0);
+      setTimeLeft(data.match.timeLeft || 0);
+    });
+
+    net.onPlayersUpdate((players: any[]) => {
+      const myId = net.socket.id;
+      enemiesRef.current.update(players.filter((p: any) => p.id !== myId));
+      const me = players.find((p: any) => p.id === myId);
+      if (me) {
+        setIsAlive(me.isAlive);
+        if (me.isAlive) { setHealth(me.health); setAmmo(me.ammo); setWeapon(me.weapon); setArmor(me.armor); }
       }
     });
 
-    net.onPlayersUpdate((players) => {
-      setRoom(prev => prev ? { ...prev, players } : null);
-      const myId = networkRef.current?.socket.id;
-      enemyManagerRef.current.update(players.filter(p => p.id !== myId));
-      const me = players.find(p => p.id === myId);
-      if (me && !me.isAlive) setAlive(false);
-      else if (me && me.isAlive) setAlive(true);
+    net.onGameState((state: any) => {
+      setRound(state.round); setMaxRounds(state.maxRounds);
+      setCtScore(state.ctScore); setTScore(state.tScore);
+      setTimeLeft(state.timeLeft);
     });
 
-    net.onGameState((state) => setRoom(state));
-    net.onBullet((data) => { (window as any).__csRenderer?.renderBullet(data); });
-    net.onKillfeed((data) => setKillfeed(prev => [data, ...prev].slice(0, 5)));
-    net.onPlayerDied((data) => { if (data.victimId === networkRef.current?.socket.id) setAlive(false); });
-    net.onCountdown((data) => { setCountdown(data.seconds); if (data.seconds <= 0) { setGameStarted(true); setCountdown(null); setAlive(true); } });
-    net.onRoundEnd((data) => { setGameStarted(false); setRoom(prev => prev ? { ...prev, ctScore: data.ctScore, tScore: data.tScore, round: data.round } : null); });
-    net.onMatchEnd((data) => { setGameStarted(false); setRoom(prev => prev ? { ...prev, ctScore: data.ctScore, tScore: data.tScore } : null); });
-    net.onError((msg) => console.error('CS error:', msg));
+    net.onBullet((data: any) => rendererRef.current?.renderBullet(data));
 
-    setTimeout(() => net.joinMatch(team), 500);
+    net.onKillfeed((data: any) => setKillfeed(prev => [data, ...prev].slice(0, 5)));
+
+    net.onPlayerDied((data: any) => { if (data.victimId === net.socket.id) setIsAlive(false); });
+
+    net.onCountdown((data: any) => {
+      setCountdown(data.seconds);
+      if (data.seconds <= 0) { setCountdown(null); setStatus('playing'); setIsAlive(true); }
+    });
+
+    net.onRoundEnd((data: any) => {
+      setStatus('team_select');
+      setCtScore(data.ctScore); setTScore(data.tScore); setRound(data.round);
+    });
+
+    net.onMatchEnd((data: any) => {
+      setStatus('team_select');
+      setCtScore(data.ctScore); setTScore(data.tScore);
+    });
+
+    net.onError((msg: string) => console.error('CS error:', msg));
+
+    net.connect(CS_SERVER_URL, nickname);
+    setTimeout(() => net.joinMatch(selectedTeam), 500);
+
+    gameRunningRef.current = true;
+    requestAnimationFrame(gameLoop);
+
+    const onKey = (e: KeyboardEvent) => {
+      const down = e.type === 'keydown';
+      const i = inputRef.current;
+      switch (e.code) {
+        case 'KeyW': i.forward = down; break;
+        case 'KeyS': i.backward = down; break;
+        case 'KeyA': i.left = down; break;
+        case 'KeyD': i.right = down; break;
+        case 'Space': i.jump = down; break;
+        case 'ControlLeft': i.crouch = down; break;
+        case 'ShiftLeft': i.sprint = down; break;
+        case 'Digit1': i.weapon = 'knife'; break;
+        case 'Digit2': i.weapon = selectedTeam === 'CT' ? 'm4a1' : 'ak47'; break;
+        case 'Digit3': i.weapon = 'deagle'; break;
+      }
+    };
+
+    const onMouse = (e: MouseEvent) => {
+      if (!plLockedRef.current) return;
+      inputRef.current.yaw -= e.movementX * 0.002;
+      inputRef.current.pitch = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, inputRef.current.pitch - e.movementY * 0.002));
+    };
+
+    const onMouseDown = (e: MouseEvent) => { if (e.button === 0) inputRef.current.shooting = true; };
+    const onMouseUp = (e: MouseEvent) => { if (e.button === 0) inputRef.current.shooting = false; };
+    const onPtrLock = () => setPointerLocked(!!document.pointerLockElement);
+    const onResize = () => renderer.resize();
+
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('keyup', onKey);
+    document.addEventListener('mousemove', onMouse);
+    document.addEventListener('mousedown', onMouseDown);
+    document.addEventListener('mouseup', onMouseUp);
+    document.addEventListener('pointerlockchange', onPtrLock);
+    window.addEventListener('resize', onResize);
+
+    (window as any).__csCleanup = () => {
+      gameRunningRef.current = false;
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('keyup', onKey);
+      document.removeEventListener('mousemove', onMouse);
+      document.removeEventListener('mousedown', onMouseDown);
+      document.removeEventListener('mouseup', onMouseUp);
+      document.removeEventListener('pointerlockchange', onPtrLock);
+      window.removeEventListener('resize', onResize);
+      renderer.dispose();
+      net.disconnect();
+      (window as any).__csRenderer = null;
+    };
   }, [nickname]);
 
-  useEffect(() => {
-    if (!canvasRef.current || !joined) return;
-    let running = true;
-    let renderer: any = null;
+  const setGameStarted = useCallback((v: boolean) => {}, []);
 
-    const initRenderer = async () => {
-      const mod = await import('../../../lib/cs/engine/renderer');
-      renderer = mod.createCSRenderer();
-      renderer.init(canvasRef.current!);
-      renderer.buildMap(DUST2);
-      (window as any).__csRenderer = renderer;
+  function gameLoop() {
+    if (!gameRunningRef.current) return;
+    const now = performance.now();
 
-      const onResize = () => renderer.resize();
-      window.addEventListener('resize', onResize);
-
-      const onKey = (e: KeyboardEvent) => {
-        const down = e.type === 'keydown';
-        switch (e.code) {
-          case 'KeyW': inputRef.current.forward = down; break;
-          case 'KeyS': inputRef.current.backward = down; break;
-          case 'KeyA': inputRef.current.left = down; break;
-          case 'KeyD': inputRef.current.right = down; break;
-          case 'Space': inputRef.current.jump = down; break;
-          case 'ControlLeft': inputRef.current.crouch = down; break;
-          case 'ShiftLeft': inputRef.current.sprint = down; break;
-          case 'Digit1': inputRef.current.weapon = 'knife'; break;
-          case 'Digit2': inputRef.current.weapon = localPlayerRef.current?.team === 'CT' ? 'm4a1' : 'ak47'; break;
-          case 'Digit3': inputRef.current.weapon = 'deagle'; break;
+    const lp = lpRef.current;
+    const r = rendererRef.current;
+    if (lp && r) {
+      if (lp.alive) {
+        const lastWeapon = lp.weapon;
+        if (inputRef.current.weapon !== lastWeapon) {
+          lp.weapon = inputRef.current.weapon;
+          lp.ammo = WEAPONS[inputRef.current.weapon].ammo;
+          r.switchWeapon(inputRef.current.weapon);
+          setWeapon(inputRef.current.weapon);
+          setAmmo(WEAPONS[inputRef.current.weapon].ammo);
         }
-      };
 
-      const onMouse = (e: MouseEvent) => {
-        if (!pointerLockedRef.current) return;
-        inputRef.current.yaw -= e.movementX * 0.002;
-        inputRef.current.pitch -= e.movementY * 0.002;
-        inputRef.current.pitch = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, inputRef.current.pitch));
-      };
+        const { updateLocalPlayer } = require('../../../lib/cs/engine/player');
+        updateLocalPlayer(lp, inputRef.current, 1 / 60, () => DUST2.boxes);
 
-      const onMouseDown = (e: MouseEvent) => { if (e.button === 0) inputRef.current.shooting = true; };
-      const onMouseUp = (e: MouseEvent) => { if (e.button === 0) inputRef.current.shooting = false; };
-      const onPointerLockChange = () => setPointerLocked(!!document.pointerLockElement);
+        setHealth(lp.health);
+        setAmmo(lp.ammo);
+        setArmor(lp.armor);
 
-      document.addEventListener('keydown', onKey);
-      document.addEventListener('keyup', onKey);
-      document.addEventListener('mousemove', onMouse);
-      document.addEventListener('mousedown', onMouseDown);
-      document.addEventListener('mouseup', onMouseUp);
-      document.addEventListener('pointerlockchange', onPointerLockChange);
+        if (inputRef.current.shooting) {
+          const { WEAPONS: W } = require('../../../lib/cs/types');
+          const def = W[lp.weapon];
+          if (now - (lp._lastShot || 0) >= def.fireRate && lp.ammo > 0) {
+            lp._lastShot = now;
+            if (lp.weapon !== 'knife') lp.ammo--;
 
-      let lastWeapon = inputRef.current.weapon;
-      let lastTime = performance.now();
-
-      const gameLoop = () => {
-        if (!running) return;
-        const now = performance.now();
-        const dt = Math.min((now - lastTime) / 1000, 0.05);
-        lastTime = now;
-
-        const lp = localPlayerRef.current;
-        if (lp && lp.alive) {
-          if (inputRef.current.weapon !== lastWeapon) {
-            lastWeapon = inputRef.current.weapon;
-            lp.weapon = inputRef.current.weapon;
-            lp.ammo = WEAPONS[inputRef.current.weapon].ammo;
-            renderer.switchWeapon(inputRef.current.weapon);
-            setLocalWeapon(inputRef.current.weapon);
-            setLocalAmmo(WEAPONS[inputRef.current.weapon].ammo);
-          }
-
-          const { shot } = updateLocalPlayer(lp, inputRef.current, dt, () => DUST2.boxes);
-          setLocalHealth(lp.health);
-          setLocalArmor(lp.armor);
-          setLocalAmmo(lp.ammo);
-
-          if (shot) {
+            const THREE = require('three');
             const eyeY = lp.position.y + (inputRef.current.crouch ? 1.2 : 1.6);
-            const origin = new THREE.Vector3(lp.position.x, eyeY, lp.position.z);
             const fwd = new THREE.Vector3(0, 0, -1);
             fwd.applyEuler(new THREE.Euler(lp.pitch, lp.yaw, 0, 'YXZ'));
-            const spread = WEAPONS[lp.weapon].spread;
-            fwd.x += (Math.random() - 0.5) * spread;
-            fwd.y += (Math.random() - 0.5) * spread;
-            fwd.z += (Math.random() - 0.5) * spread;
+            fwd.x += (Math.random() - 0.5) * def.spread;
+            fwd.y += (Math.random() - 0.5) * def.spread;
+            fwd.z += (Math.random() - 0.5) * def.spread;
             fwd.normalize();
 
             let hitId: string | undefined;
-            if (lp.weapon !== 'knife') {
-              const hitEnemy = enemyManagerRef.current.getEnemyAt(0, 0, renderer.camera);
-              hitId = hitEnemy?.id;
-            } else {
-              for (const e of enemyManagerRef.current.enemies) {
-                const ePos = new THREE.Vector3(e.x, e.y + 1, e.z);
-                if (origin.distanceTo(ePos) < 3) { hitId = e.id; break; }
+            for (const e of enemiesRef.current.enemies) {
+              const ePos = new THREE.Vector3(e.x, e.y + 1, e.z);
+              const origin = new THREE.Vector3(lp.position.x, eyeY, lp.position.z);
+              const toEnemy = ePos.clone().sub(origin);
+              const dot = toEnemy.dot(fwd);
+              if (dot > 0 && dot < def.range) {
+                const closest = origin.clone().add(fwd.clone().multiplyScalar(dot));
+                if (closest.distanceTo(ePos) < 0.6) { hitId = e.id; break; }
               }
             }
 
-            networkRef.current?.shoot({ x: origin.x, y: eyeY, z: origin.z, dx: fwd.x, dy: fwd.y, dz: fwd.z, weapon: lp.weapon, hitId });
-            renderer.renderMuzzleFlash(origin.x + fwd.x * 0.5, eyeY + fwd.y * 0.5, origin.z + fwd.z * 0.5);
-            recoilRef.current = WEAPONS[lp.weapon].recoilY;
+            netRef.current?.shoot({
+              x: lp.position.x, y: eyeY, z: lp.position.z,
+              dx: fwd.x, dy: fwd.y, dz: fwd.z,
+              weapon: lp.weapon, hitId,
+            });
+
+            r.renderMuzzleFlash(lp.position.x + fwd.x * 0.5, eyeY + fwd.y * 0.5, lp.position.z + fwd.z * 0.5);
+            recoilRef.current = def.recoilY;
           }
-
-          recoilRef.current *= 0.88;
-          renderer.updateCamera(lp.position, lp.yaw, lp.pitch + recoilRef.current, inputRef.current.crouch);
-          renderer.renderEnemies(enemyManagerRef.current.enemies, lp.team || 'CT');
         }
 
-        const timeSinceLastSend = now - lastStateSendRef.current;
-        if (timeSinceLastSend > 50 && lp) {
-          networkRef.current?.sendState({ x: lp.position.x, y: lp.position.y, z: lp.position.z, yaw: lp.yaw, pitch: lp.pitch, health: lp.health, armor: lp.armor, weapon: lp.weapon, ammo: lp.ammo, isAlive: lp.alive });
-          lastStateSendRef.current = now;
-        }
+        recoilRef.current *= 0.88;
+        r.updateCamera(lp.position, lp.yaw, lp.pitch + recoilRef.current, inputRef.current.crouch);
+        r.renderEnemies(enemiesRef.current.enemies, lp.team || 'CT');
+      }
 
-        renderer.renderMap();
-        requestAnimationFrame(gameLoop);
-      };
+      if (now - lastSendRef.current > 50 && lp) {
+        netRef.current?.sendState({ x: lp.position.x, y: lp.position.y, z: lp.position.z, yaw: lp.yaw, pitch: lp.pitch, health: lp.health, armor: lp.armor, weapon: lp.weapon, ammo: lp.ammo, isAlive: lp.alive });
+        lastSendRef.current = now;
+      }
 
-      requestAnimationFrame(gameLoop);
-      return () => {
-        running = false;
-        document.removeEventListener('keydown', onKey);
-        document.removeEventListener('keyup', onKey);
-        document.removeEventListener('mousemove', onMouse);
-        document.removeEventListener('mousedown', onMouseDown);
-        document.removeEventListener('mouseup', onMouseUp);
-        document.removeEventListener('pointerlockchange', onPointerLockChange);
-        window.removeEventListener('resize', onResize);
-        renderer.dispose();
-        (window as any).__csRenderer = null;
-      };
-    };
+      r.renderMap();
+    }
 
-    const cleanup = initRenderer();
-    return () => { running = false; cleanup.then(fn => fn?.()); };
-  }, [joined]);
+    requestAnimationFrame(gameLoop);
+  }
 
-  const handleCanvasClick = useCallback(() => {
-    if (!pointerLocked && alive) canvasRef.current?.requestPointerLock();
-  }, [pointerLocked, alive]);
+  const handleClick = useCallback(() => {
+    if (!pointerLocked && isAlive && status === 'playing') canvasRef.current?.requestPointerLock();
+  }, [pointerLocked, isAlive, status]);
+
+  useEffect(() => {
+    return () => { (window as any).__csCleanup?.(); };
+  }, []);
 
   if (!nickname) return null;
 
-  if (!teamSelect) {
-    return (
-      <div style={{
-        minHeight: '100vh', background: 'linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #0a0a0a 100%)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontFamily: 'monospace', color: '#fff',
-      }}>
-        <div style={{ textAlign: 'center' }}>
-          <h1 style={{ fontSize: 42, fontWeight: 900, color: '#ff6b6b', marginBottom: 8 }}>CS RESENHA</h1>
-          <p style={{ color: '#888', marginBottom: 32, fontSize: 14 }}>Escolha seu time para entrar na partida</p>
-          <div style={{ display: 'flex', gap: 16, justifyContent: 'center' }}>
-            <button onClick={() => handleTeamSelect('CT')} style={{
-              padding: '20px 48px', borderRadius: 12, border: '2px solid #4488ff',
-              background: 'rgba(68,136,255,0.15)', color: '#4488ff', cursor: 'pointer',
-              fontWeight: 'bold', fontSize: 20, transition: 'all 0.2s',
-            }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(68,136,255,0.3)'; e.currentTarget.style.transform = 'scale(1.05)'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(68,136,255,0.15)'; e.currentTarget.style.transform = 'scale(1)'; }}
-            >
-              CT
-              <div style={{ fontSize: 11, color: '#666', marginTop: 6 }}>M4A1</div>
-            </button>
-            <button onClick={() => handleTeamSelect('T')} style={{
-              padding: '20px 48px', borderRadius: 12, border: '2px solid #ff6b35',
-              background: 'rgba(255,107,53,0.15)', color: '#ff6b35', cursor: 'pointer',
-              fontWeight: 'bold', fontSize: 20, transition: 'all 0.2s',
-            }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,107,53,0.3)'; e.currentTarget.style.transform = 'scale(1.05)'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,107,53,0.15)'; e.currentTarget.style.transform = 'scale(1)'; }}
-            >
-              T
-              <div style={{ fontSize: 11, color: '#666', marginTop: 6 }}>AK-47</div>
-            </button>
-          </div>
-          <p style={{ color: '#555', marginTop: 24, fontSize: 12 }}>{nickname}</p>
-          <button onClick={() => router.push('/')} style={{
-            marginTop: 16, padding: '8px 20px', background: '#333', color: '#aaa',
-            border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 12,
-          }}>Voltar ao Hub</button>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', background: '#000', position: 'relative' }}>
-      <HUD room={room} localPlayer={{ health: localHealth, armor: localArmor, ammo: localAmmo, weapon: localWeapon }} killfeed={killfeed} />
+    <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', background: '#000', position: 'relative', fontFamily: 'monospace' }}>
+      {status === 'team_select' && (
+        <div style={{
+          position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #0a0a0a 100%)', zIndex: 30,
+        }}>
+          <div style={{ textAlign: 'center', color: '#fff' }}>
+            <h1 style={{ fontSize: 42, fontWeight: 900, color: '#ff6b6b', marginBottom: 8 }}>CS RESENHA</h1>
+            <p style={{ color: '#888', marginBottom: 32, fontSize: 14 }}>Escolha seu time</p>
+            {ctScore > 0 || tScore > 0 ? (
+              <div style={{ display: 'flex', gap: 20, justifyContent: 'center', marginBottom: 24 }}>
+                <span style={{ color: '#4488ff', fontSize: 24, fontWeight: 'bold' }}>CT {ctScore}</span>
+                <span style={{ color: '#666', fontSize: 18 }}>x</span>
+                <span style={{ color: '#ff6b35', fontSize: 24, fontWeight: 'bold' }}>{tScore} T</span>
+              </div>
+            ) : null}
+            <div style={{ display: 'flex', gap: 16, justifyContent: 'center' }}>
+              <button onClick={() => startGame('CT')} style={{
+                padding: '20px 48px', borderRadius: 12, border: '2px solid #4488ff',
+                background: 'rgba(68,136,255,0.15)', color: '#4488ff', cursor: 'pointer',
+                fontWeight: 'bold', fontSize: 20,
+              }}>CT<div style={{ fontSize: 11, color: '#666', marginTop: 6 }}>M4A1</div></button>
+              <button onClick={() => startGame('T')} style={{
+                padding: '20px 48px', borderRadius: 12, border: '2px solid #ff6b35',
+                background: 'rgba(255,107,53,0.15)', color: '#ff6b35', cursor: 'pointer',
+                fontWeight: 'bold', fontSize: 20,
+              }}>T<div style={{ fontSize: 11, color: '#666', marginTop: 6 }}>AK-47</div></button>
+            </div>
+            <p style={{ color: '#555', marginTop: 24, fontSize: 12 }}>{nickname}</p>
+            <button onClick={() => router.push('/')} style={{ marginTop: 16, padding: '8px 20px', background: '#333', color: '#aaa', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 12 }}>Voltar ao Hub</button>
+          </div>
+        </div>
+      )}
 
-      {!pointerLocked && alive && gameStarted && (
-        <div onClick={handleCanvasClick} style={{
+      {status === 'connecting' && (
+        <div style={{
+          position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: '#000', zIndex: 30,
+        }}>
+          <div style={{ textAlign: 'center', color: '#fff' }}>
+            <div style={{ width: 40, height: 40, border: '3px solid #ff6b6b', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 16px' }} />
+            <p>Conectando ao servidor...</p>
+          </div>
+        </div>
+      )}
+
+      {/* Scoreboard */}
+      <div style={{
+        position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)',
+        display: 'flex', alignItems: 'center', gap: 16, background: 'rgba(0,0,0,0.6)',
+        padding: '6px 20px', borderRadius: 8, zIndex: 10, pointerEvents: 'none',
+      }}>
+        <div style={{ color: '#4488ff', fontWeight: 'bold', fontSize: 20 }}>{ctScore}</div>
+        <div style={{ color: '#666', fontSize: 12, textAlign: 'center' }}>
+          <div>Round {round}/{maxRounds}</div>
+          <div style={{ fontSize: 16, color: '#fff', fontWeight: 'bold' }}>{timeLeft}s</div>
+        </div>
+        <div style={{ color: '#ff6b35', fontWeight: 'bold', fontSize: 20 }}>{tScore}</div>
+      </div>
+
+      {/* Killfeed */}
+      <div style={{ position: 'absolute', top: 60, right: 12, display: 'flex', flexDirection: 'column', gap: 4, maxWidth: 280, zIndex: 10, pointerEvents: 'none' }}>
+        {killfeed.slice(0, 5).map((k, i) => (
+          <div key={i} style={{ background: 'rgba(0,0,0,0.5)', padding: '3px 8px', borderRadius: 4, fontSize: 11, color: '#ccc', whiteSpace: 'nowrap' }}>
+            <span style={{ color: '#ff6b6b' }}>{k.killer}</span>
+            <span style={{ color: '#888' }}> [{k.weapon}{k.headshot ? ' HS' : ''}] </span>
+            <span style={{ color: '#4488ff' }}>{k.victim}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Health / Armor */}
+      <div style={{ position: 'absolute', bottom: 16, left: 16, zIndex: 10, pointerEvents: 'none' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ color: '#ff4444', fontSize: 24 }}>♥</span>
+          <span style={{ color: health > 50 ? '#0f0' : health > 25 ? '#ff0' : '#f00', fontSize: 24, fontWeight: 'bold' }}>{health}</span>
+        </div>
+        {armor > 0 && <div style={{ color: '#4488ff', fontSize: 14, marginTop: 2 }}>🛡 {armor}</div>}
+      </div>
+
+      {/* Ammo */}
+      <div style={{ position: 'absolute', bottom: 16, right: 16, textAlign: 'right', zIndex: 10, pointerEvents: 'none' }}>
+        <div style={{ color: '#fff', fontSize: 28, fontWeight: 'bold' }}>{weapon === 'knife' ? '∞' : ammo}</div>
+        <div style={{ color: '#888', fontSize: 12 }}>{WEAPONS[weapon].name}</div>
+      </div>
+
+      {/* Crosshair */}
+      {status === 'playing' && isAlive && (
+        <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 10, pointerEvents: 'none' }}>
+          <svg width="24" height="24" viewBox="0 0 24 24">
+            <line x1="12" y1="4" x2="12" y2="10" stroke="#0f0" strokeWidth="1.5" opacity="0.9"/>
+            <line x1="12" y1="14" x2="12" y2="20" stroke="#0f0" strokeWidth="1.5" opacity="0.9"/>
+            <line x1="4" y1="12" x2="10" y2="12" stroke="#0f0" strokeWidth="1.5" opacity="0.9"/>
+            <line x1="14" y1="12" x2="20" y2="12" stroke="#0f0" strokeWidth="1.5" opacity="0.9"/>
+            <circle cx="12" cy="12" r="2" fill="none" stroke="#0f0" strokeWidth="0.8" opacity="0.6"/>
+          </svg>
+        </div>
+      )}
+
+      {/* Click to play overlay */}
+      {status === 'playing' && !pointerLocked && isAlive && (
+        <div onClick={handleClick} style={{
           position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
           background: 'rgba(0,0,0,0.4)', zIndex: 20, cursor: 'pointer',
         }}>
           <div style={{ textAlign: 'center', color: '#fff' }}>
             <p style={{ fontSize: 20, fontWeight: 'bold' }}>Clique para jogar</p>
-            <p style={{ fontSize: 12, color: '#888', marginTop: 8 }}>WASD + Mouse | 1/2/3 = Armas | Shift = Correr | Ctrl = Agachar</p>
+            <p style={{ fontSize: 12, color: '#888', marginTop: 8 }}>WASD + Mouse | 1/2/3 Armas | Shift Correr | Ctrl Agachar</p>
           </div>
         </div>
       )}
 
-      {!alive && gameStarted && (
-        <div style={{
-          position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: 'rgba(180,0,0,0.3)', zIndex: 20, pointerEvents: 'none',
-        }}>
+      {/* Dead overlay */}
+      {!isAlive && status === 'playing' && (
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(180,0,0,0.3)', zIndex: 20, pointerEvents: 'none' }}>
           <div style={{ textAlign: 'center', color: '#fff' }}>
             <p style={{ fontSize: 28, fontWeight: 'bold', color: '#ff4444' }}>ELIMINADO</p>
             <p style={{ fontSize: 14, color: '#aaa', marginTop: 8 }}>Aguardando proximo round...</p>
@@ -309,16 +397,15 @@ export default function CSGamePage() {
         </div>
       )}
 
+      {/* Countdown */}
       {countdown !== null && countdown > 0 && (
-        <div style={{
-          position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: 'rgba(0,0,0,0.6)', zIndex: 25, pointerEvents: 'none',
-        }}>
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)', zIndex: 25, pointerEvents: 'none' }}>
           <div style={{ fontSize: 64, fontWeight: 'bold', color: '#fff' }}>{countdown}</div>
         </div>
       )}
 
-      <div ref={canvasRef} onClick={handleCanvasClick} style={{ width: '100%', height: '100%' }} />
+      {/* Three.js Canvas */}
+      <div ref={canvasRef} onClick={handleClick} style={{ width: '100%', height: '100%' }} />
     </div>
   );
 }
