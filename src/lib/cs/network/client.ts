@@ -24,7 +24,7 @@ export interface CSNetworkClient {
 export function createCSNetworkClient(): CSNetworkClient {
   let socket: Socket;
   let pendingTeam: 'CT' | 'T' | null = null;
-  const listeners: Array<() => void> = [];
+  const pendingListeners: Array<{ event: string; cb: (...args: any[]) => void }> = [];
 
   function connect(url: string, nickname: string) {
     socket = io(url + '/cs', {
@@ -43,11 +43,19 @@ export function createCSNetworkClient(): CSNetworkClient {
     });
     socket.on('disconnect', (reason) => console.log('CS disconnected:', reason));
     socket.on('connect_error', (err) => console.error('CS connect_error:', err.message));
+
+    for (const { event, cb } of pendingListeners) {
+      socket.on(event, cb);
+    }
+    pendingListeners.length = 0;
   }
 
   function on(event: string, cb: (...args: any[]) => void) {
-    socket?.on(event, cb);
-    listeners.push(() => socket?.off(event, cb));
+    if (socket) {
+      socket.on(event, cb);
+    } else {
+      pendingListeners.push({ event, cb });
+    }
   }
 
   function joinMatch(team: 'CT' | 'T') {
@@ -56,7 +64,9 @@ export function createCSNetworkClient(): CSNetworkClient {
   }
 
   function leaveMatch() {
-    socket?.emit('disconnect');
+    pendingTeam = null;
+    socket?.emit('leave_match');
+    socket?.disconnect();
   }
 
   function sendState(state: Partial<CSPlayerState>) {
@@ -79,8 +89,7 @@ export function createCSNetworkClient(): CSNetworkClient {
   function onError(cb: (msg: string) => void) { on('error_msg', cb); }
 
   function disconnect() {
-    for (const cleanup of listeners) cleanup();
-    listeners.length = 0;
+    pendingTeam = null;
     socket?.disconnect();
   }
 
