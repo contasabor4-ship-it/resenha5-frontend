@@ -104,15 +104,18 @@ export default function CSGamePage() {
       netRef.current = net;
 
       net.onMatchJoined((data: any) => {
-        console.log('CS: match_joined received', data);
+        console.log('CS: match_joined received', JSON.stringify({ playerId: data.playerId, players: data.players.map((p:any)=>({id:p.id,nick:p.nickname,team:p.team,isAlive:p.isAlive})) }));
         const me = data.players.find((p: any) => p.id === data.playerId);
         if (me) {
+          console.log('[CS DEBUG] match_joined: pos=' + me.x + ',' + me.y + ',' + me.z + ' alive=' + me.isAlive + ' weapon=' + me.weapon);
           lp.position.x = me.x; lp.position.y = me.y; lp.position.z = me.z;
           lp.health = me.health; lp.weapon = me.weapon; lp.ammo = me.ammo;
           lp.team = me.team;
           lp.alive = me.isAlive;
           lp.velocityY = 0; lp.grounded = true;
           setHealth(me.health); setAmmo(me.ammo); setWeapon(me.weapon);
+        } else {
+          console.error('[CS DEBUG] match_joined: player NOT found! playerId=' + data.playerId);
         }
         (rendererRef.current?.camera as any).__ownerId = data.playerId;
         setRound(data.match.round || 0);
@@ -130,6 +133,9 @@ export default function CSGamePage() {
         const me = players.find((p: any) => p.id === myId);
         if (me) {
           const wasAlive = lp.alive;
+          if (wasAlive !== me.isAlive) {
+            console.log('[CS DEBUG] alive changed: ' + wasAlive + ' -> ' + me.isAlive + ' (from server)');
+          }
           lp.alive = me.isAlive;
           setIsAlive(me.isAlive);
           lp.team = me.team;
@@ -145,9 +151,12 @@ export default function CSGamePage() {
             setReloadProgress(0);
           }
           if (!wasAlive && me.isAlive) {
+            console.log('[CS DEBUG] respawned at', me.x, me.y, me.z);
             lp.position.x = me.x; lp.position.y = me.y; lp.position.z = me.z;
             lp.velocityY = 0; lp.grounded = true;
           }
+        } else {
+          console.log('[CS DEBUG] my player NOT found in players_update! myId=' + myId + ' players=' + players.map((p:any)=>p.id).join(','));
         }
       });
 
@@ -171,13 +180,16 @@ export default function CSGamePage() {
 
       net.onKillfeed((data: any) => setKillfeed(prev => [data, ...prev].slice(0, 5)));
       net.onPlayerDied((data: any) => {
+        console.log('[CS DEBUG] player_died:', data.victimId, 'my id:', net.socket?.id);
         if (data.victimId === net.socket?.id) {
           setIsAlive(false);
           lp.alive = false;
+          console.log('[CS DEBUG] I died! lp.alive = false');
         }
       });
 
       net.onCountdown((data: any) => {
+        console.log('[CS DEBUG] countdown received:', data.seconds);
         if (countdownTimerRef.current) { clearInterval(countdownTimerRef.current); countdownTimerRef.current = null; }
         const startSec = data.seconds;
         setCountdown(startSec);
@@ -188,6 +200,7 @@ export default function CSGamePage() {
           lp.alive = true;
           lp.velocityY = 0;
           lp.grounded = true;
+          console.log('[CS DEBUG] countdown 0: lp.alive set to true');
         } else {
           countdownTimerRef.current = setInterval(() => {
             setCountdown(prev => {
@@ -196,6 +209,7 @@ export default function CSGamePage() {
                 lp.alive = true;
                 lp.velocityY = 0;
                 lp.grounded = true;
+                console.log('[CS DEBUG] countdown finished: lp.alive set to true');
                 return null;
               }
               return prev - 1;
@@ -300,6 +314,8 @@ export default function CSGamePage() {
     }
   }, [nickname]);
 
+  let debugFrameCount = 0;
+
   function gameLoop() {
     if (!gameRunningRef.current) return;
     const now = performance.now();
@@ -309,7 +325,22 @@ export default function CSGamePage() {
 
     const lp = lpRef.current;
     const r = rendererRef.current;
-    if (lp && r && lp.alive) {
+
+    if (!lp || !r) {
+      r?.renderMap();
+      requestAnimationFrame(gameLoop);
+      return;
+    }
+
+    debugFrameCount++;
+    if (debugFrameCount % 120 === 0) {
+      console.log('[CS DEBUG] alive=' + lp.alive + ' pos=' + JSON.stringify(lp.position) +
+        ' input: F=' + inputRef.current.forward + ' B=' + inputRef.current.backward +
+        ' L=' + inputRef.current.left + ' R=' + inputRef.current.right +
+        ' weapon=' + lp.weapon + ' ammo=' + lp.ammo);
+    }
+
+    if (lp.alive) {
       if (inputRef.current.weapon !== lp.weapon) {
         lp.weapon = inputRef.current.weapon;
         lp.ammo = WEAPONS[inputRef.current.weapon as WeaponType].ammo;
@@ -381,17 +412,18 @@ export default function CSGamePage() {
       }
 
       recoilRef.current *= 0.88;
-      r.updateCamera(lp.position, lp.yaw, lp.pitch + recoilRef.current, inputRef.current.crouch);
-      r.renderEnemies(enemiesRef.current.enemies, lp.team || 'CT');
-      r.updateParticles(dt);
     }
 
-    if (now - lastSendRef.current > 50 && lp) {
+    r.updateCamera(lp.position, lp.yaw, lp.pitch + recoilRef.current, inputRef.current.crouch);
+    r.renderEnemies(enemiesRef.current.enemies, lp.team || 'CT');
+    r.updateParticles(dt);
+
+    if (now - lastSendRef.current > 50) {
       netRef.current?.sendState({ x: lp.position.x, y: lp.position.y, z: lp.position.z, yaw: lp.yaw, pitch: lp.pitch, weapon: lp.weapon });
       lastSendRef.current = now;
     }
 
-    r?.renderMap();
+    r.renderMap();
     requestAnimationFrame(gameLoop);
   }
 

@@ -35,16 +35,16 @@ const MAX_BULLET_LINES = 20;
 const MAX_PARTICLES = 80;
 
 const WEAPON_OFFSETS: Record<WeaponType, { x: number; y: number; z: number }> = {
-  ak47: { x: 0.25, y: -0.28, z: -0.45 },
-  m4a1: { x: 0.25, y: -0.28, z: -0.45 },
-  deagle: { x: 0.2, y: -0.25, z: -0.35 },
-  knife: { x: 0.18, y: -0.25, z: -0.2 },
+  ak47: { x: 0.22, y: -0.25, z: -0.55 },
+  m4a1: { x: 0.22, y: -0.25, z: -0.55 },
+  deagle: { x: 0.18, y: -0.22, z: -0.4 },
+  knife: { x: 0.15, y: -0.22, z: -0.25 },
 };
 
 const WEAPON_ROTATIONS: Record<WeaponType, { x: number; y: number; z: number }> = {
-  ak47: { x: -0.15, y: 0.4, z: 0.05 },
-  m4a1: { x: -0.15, y: 0.4, z: 0.05 },
-  deagle: { x: -0.1, y: 0.3, z: 0.1 },
+  ak47: { x: -0.08, y: 0.35, z: 0.03 },
+  m4a1: { x: -0.08, y: 0.35, z: 0.03 },
+  deagle: { x: -0.05, y: 0.25, z: 0.08 },
   knife: { x: -0.5, y: 0.8, z: 0.3 },
 };
 
@@ -86,12 +86,15 @@ export function createCSRenderer(): CSRenderer {
     const dirLight = new THREE.DirectionalLight(0xfff5e1, 0.9);
     dirLight.position.set(30, 50, 20);
     scene.add(dirLight);
-    const weaponLight = new THREE.PointLight(0xffffff, 2.0, 5);
-    weaponLight.position.set(0.2, 0.1, -0.3);
+    const weaponLight = new THREE.PointLight(0xffffff, 3.0, 8);
+    weaponLight.position.set(0.3, 0.2, -0.5);
     camera.add(weaponLight);
-    const weaponLight2 = new THREE.PointLight(0xffffff, 1.0, 3);
-    weaponLight2.position.set(-0.1, 0.2, 0);
+    const weaponLight2 = new THREE.PointLight(0xffffff, 1.5, 5);
+    weaponLight2.position.set(-0.2, 0.3, 0.1);
     camera.add(weaponLight2);
+    const weaponLight3 = new THREE.PointLight(0xffffff, 2.0, 6);
+    weaponLight3.position.set(0.1, -0.1, -0.2);
+    camera.add(weaponLight3);
 
     mapGroup = new THREE.Group();
     scene.add(mapGroup);
@@ -113,12 +116,12 @@ export function createCSRenderer(): CSRenderer {
 
   function buildWeaponModel(weapon: WeaponType): THREE.Group {
     const group = new THREE.Group();
-    const darkMetal = new THREE.MeshLambertMaterial({ color: 0x2a2a2a });
-    const metal = new THREE.MeshLambertMaterial({ color: 0x4a4a4a });
-    const lightMetal = new THREE.MeshLambertMaterial({ color: 0x777777 });
-    const wood = new THREE.MeshLambertMaterial({ color: 0x8B5A2F });
-    const woodDark = new THREE.MeshLambertMaterial({ color: 0x6A3A15 });
-    const gripMat = new THREE.MeshLambertMaterial({ color: 0x333333 });
+    const darkMetal = new THREE.MeshPhongMaterial({ color: 0x3a3a3a, specular: 0x222222, shininess: 30 });
+    const metal = new THREE.MeshPhongMaterial({ color: 0x5a5a5a, specular: 0x333333, shininess: 50 });
+    const lightMetal = new THREE.MeshPhongMaterial({ color: 0x888888, specular: 0x444444, shininess: 60 });
+    const wood = new THREE.MeshPhongMaterial({ color: 0x9B6A3F, specular: 0x111111, shininess: 10 });
+    const woodDark = new THREE.MeshPhongMaterial({ color: 0x7A4A25, specular: 0x111111, shininess: 10 });
+    const gripMat = new THREE.MeshPhongMaterial({ color: 0x444444, specular: 0x222222, shininess: 20 });
 
     if (weapon === 'knife') {
       const handle = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.14, 0.04), woodDark);
@@ -197,6 +200,7 @@ export function createCSRenderer(): CSRenderer {
     const rot = WEAPON_ROTATIONS[weapon];
     weaponModel.position.set(off.x, off.y, off.z);
     weaponModel.rotation.set(rot.x, rot.y, rot.z);
+    console.log('[CS WEAPON] attachWeaponModel:', weapon, 'children:', model.children.length, 'pos:', off, 'rot:', rot);
   }
 
   function switchWeapon(weapon: WeaponType) {
