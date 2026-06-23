@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { CSMapDef, CSPlayerState, BulletHole, BulletFireEvent, WeaponType } from '../types';
 import { WEAPONS } from '../types';
 
@@ -35,36 +34,19 @@ const MAX_BULLET_HOLES = 100;
 const MAX_BULLET_LINES = 20;
 const MAX_PARTICLES = 80;
 
-const WEAPON_GLBS: Record<WeaponType, string> = {
-  ak47: '/weapons/ak47.glb',
-  m4a1: '/weapons/m4a1.glb',
-  deagle: '/weapons/deagle.glb',
-  knife: '/weapons/knife.glb',
-};
-
-const WEAPON_SCALES: Record<WeaponType, number> = {
-  ak47: 1,
-  m4a1: 1,
-  deagle: 1,
-  knife: 1,
-};
-
 const WEAPON_OFFSETS: Record<WeaponType, { x: number; y: number; z: number }> = {
-  ak47: { x: 0.3, y: -0.35, z: -0.6 },
-  m4a1: { x: 0.3, y: -0.35, z: -0.6 },
-  deagle: { x: 0.25, y: -0.3, z: -0.45 },
-  knife: { x: 0.3, y: -0.35, z: -0.3 },
+  ak47: { x: 0.28, y: -0.32, z: -0.55 },
+  m4a1: { x: 0.28, y: -0.32, z: -0.55 },
+  deagle: { x: 0.22, y: -0.28, z: -0.4 },
+  knife: { x: 0.22, y: -0.3, z: -0.25 },
 };
 
 const WEAPON_ROTATIONS: Record<WeaponType, { x: number; y: number; z: number }> = {
-  ak47: { x: 0, y: Math.PI + 0.3, z: 0 },
-  m4a1: { x: 0, y: Math.PI + 0.3, z: 0 },
-  deagle: { x: 0, y: Math.PI, z: 0.1 },
-  knife: { x: -0.4, y: Math.PI + 0.5, z: 0.3 },
+  ak47: { x: -0.1, y: Math.PI + 0.4, z: 0 },
+  m4a1: { x: -0.1, y: Math.PI + 0.4, z: 0 },
+  deagle: { x: -0.05, y: Math.PI + 0.3, z: 0.08 },
+  knife: { x: -0.3, y: Math.PI + 0.5, z: 0.2 },
 };
-
-const glbLoader = new GLTFLoader();
-const glbCache: Record<string, THREE.Group> = {};
 
 export function createCSRenderer(): CSRenderer {
   let scene: THREE.Scene;
@@ -123,88 +105,81 @@ export function createCSRenderer(): CSRenderer {
     c.style.position = 'relative';
     c.appendChild(crosshair);
 
-    loadWeaponGLB('ak47');
+    switchWeapon('ak47');
   }
 
-  function loadWeaponGLB(weapon: WeaponType): void {
-    const url = WEAPON_GLBS[weapon];
-    if (glbCache[url]) return;
-
-    glbLoader.load(
-      url,
-      (gltf) => {
-        const model = gltf.scene;
-
-        model.traverse((child) => {
-          if ((child as THREE.Mesh).isMesh) {
-            const mesh = child as THREE.Mesh;
-            const oldMat = mesh.material as THREE.MeshStandardMaterial;
-            const color = oldMat.color || new THREE.Color(0x888888);
-            mesh.material = new THREE.MeshLambertMaterial({
-              color,
-            });
-          }
-        });
-
-        const box = new THREE.Box3().setFromObject(model);
-        const size = box.getSize(new THREE.Vector3());
-        const targetLen = weapon === 'knife' ? 0.4 : weapon === 'deagle' ? 0.35 : 0.7;
-        const maxDim = Math.max(size.x, size.y, size.z);
-        const autoScale = maxDim > 0 ? targetLen / maxDim : 1;
-        model.scale.setScalar(autoScale);
-
-        const centeredBox = new THREE.Box3().setFromObject(model);
-        const centeredCenter = centeredBox.getCenter(new THREE.Vector3());
-        model.position.sub(centeredCenter);
-
-        glbCache[url] = model;
-        if (currentWeapon === weapon) attachWeaponModel(weapon);
-        console.log(`GLB loaded: ${weapon}, autoScale: ${autoScale.toFixed(3)}, size: ${size.x.toFixed(2)}x${size.y.toFixed(2)}x${size.z.toFixed(2)}`);
-      },
-      undefined,
-      (err) => {
-        console.warn(`Failed to load GLB for ${weapon}, using fallback`, err);
-      }
-    );
-  }
-
-  function createFallbackWeapon(weapon: WeaponType): THREE.Group {
+  function buildWeaponModel(weapon: WeaponType): THREE.Group {
     const group = new THREE.Group();
-    const bodyMat = new THREE.MeshLambertMaterial({ color: 0x2a2a2a });
-    const accentMat = new THREE.MeshLambertMaterial({ color: 0x555555 });
-    const woodMat = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
+    const darkMetal = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
+    const metal = new THREE.MeshLambertMaterial({ color: 0x3a3a3a });
+    const lightMetal = new THREE.MeshLambertMaterial({ color: 0x666666 });
+    const wood = new THREE.MeshLambertMaterial({ color: 0x6B3A1F });
+    const woodDark = new THREE.MeshLambertMaterial({ color: 0x4A2810 });
+    const grip = new THREE.MeshLambertMaterial({ color: 0x222222 });
 
     if (weapon === 'knife') {
-      const handle = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.16, 0.05), woodMat);
-      const blade = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.28, 0.035), accentMat);
-      blade.position.y = 0.22;
-      group.add(handle, blade);
+      const handle = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.14, 0.04), woodDark);
+      const wrap1 = new THREE.Mesh(new THREE.BoxGeometry(0.038, 0.03, 0.043), wood);
+      wrap1.position.y = 0.02;
+      const wrap2 = new THREE.Mesh(new THREE.BoxGeometry(0.038, 0.03, 0.043), wood);
+      wrap2.position.y = -0.02;
+      const guard = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.015, 0.05), metal);
+      guard.position.y = 0.075;
+      const blade = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.24, 0.025), lightMetal);
+      blade.position.y = 0.21;
+      const edge = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.22, 0.028), metal);
+      edge.position.set(0.005, 0.21, 0);
+      group.add(handle, wrap1, wrap2, guard, blade, edge);
     } else if (weapon === 'deagle') {
-      const grip = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.14, 0.07), bodyMat);
-      grip.position.set(0, -0.08, 0.02);
-      const slide = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.07, 0.32), accentMat);
-      slide.position.set(0, 0.02, -0.1);
-      const sight = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.03, 0.03), accentMat);
-      sight.position.set(0, 0.07, -0.22);
-      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.012, 0.12), accentMat);
+      const gripMesh = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.12, 0.06), grip);
+      gripMesh.position.set(0, -0.1, 0.03);
+      const trigger = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.025, 0.03), metal);
+      trigger.position.set(0, -0.06, -0.01);
+      const triggerGuard = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.012, 0.05), metal);
+      triggerGuard.position.set(0, -0.08, 0);
+      const slide = new THREE.Mesh(new THREE.BoxGeometry(0.042, 0.055, 0.3), metal);
+      slide.position.set(0, 0.01, -0.12);
+      const slideTop = new THREE.Mesh(new THREE.BoxGeometry(0.038, 0.01, 0.28), lightMetal);
+      slideTop.position.set(0, 0.04, -0.12);
+      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.014, 0.15, 8), darkMetal);
       barrel.rotation.x = Math.PI / 2;
-      barrel.position.set(0, 0.0, -0.3);
-      group.add(grip, slide, sight, barrel);
+      barrel.position.set(0, 0.0, -0.28);
+      const frontSight = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.02, 0.012), lightMetal);
+      frontSight.position.set(0, 0.05, -0.24);
+      const rearSight = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.015, 0.015), lightMetal);
+      rearSight.position.set(0, 0.05, -0.04);
+      const hammer = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.025, 0.015), metal);
+      hammer.position.set(0, 0.04, 0.05);
+      group.add(gripMesh, trigger, triggerGuard, slide, slideTop, barrel, frontSight, rearSight, hammer);
     } else {
-      const stock = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.1, 0.2), weapon === 'm4a1' ? bodyMat : woodMat);
-      stock.position.set(0, -0.02, 0.12);
-      const body = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.08, 0.35), bodyMat);
-      body.position.set(0, 0.02, -0.08);
-      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.018, 0.35), accentMat);
-      barrel.rotation.x = Math.PI / 2;
-      barrel.position.set(0, 0.05, -0.3);
-      const mag = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.12, 0.05), bodyMat);
-      mag.position.set(0, -0.08, -0.04);
-      const sight = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.03, 0.04), accentMat);
-      sight.position.set(0, 0.08, -0.12);
-      const handguard = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.055, 0.2), bodyMat);
-      handguard.position.set(0, 0.01, -0.28);
-      group.add(stock, body, barrel, mag, sight, handguard);
+      const isM4 = weapon === 'm4a1';
+      const stock = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.065, 0.16), isM4 ? metal : wood);
+      stock.position.set(0, -0.01, 0.14);
+      const stockPad = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.06, 0.02), isM4 ? grip : woodDark);
+      stockPad.position.set(0, -0.01, 0.22);
+      const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.048, 0.06, 0.2), metal);
+      receiver.position.set(0, 0.01, -0.02);
+      const receiverTop = new THREE.Mesh(new THREE.BoxGeometry(0.042, 0.012, 0.18), lightMetal);
+      receiverTop.position.set(0, 0.045, -0.02);
+      const handguard = new THREE.Mesh(new THREE.BoxGeometry(0.044, 0.044, 0.22), isM4 ? metal : wood);
+      handguard.position.set(0, 0.0, -0.23);
+      const barrelMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.013, 0.3, 8), darkMetal);
+      barrelMesh.rotation.x = Math.PI / 2;
+      barrelMesh.position.set(0, 0.005, -0.34);
+      const muzzle = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.01, 0.03, 8), metal);
+      muzzle.rotation.x = Math.PI / 2;
+      muzzle.position.set(0, 0.005, -0.5);
+      const mag = new THREE.Mesh(new THREE.BoxGeometry(0.028, 0.1, 0.04), isM4 ? metal : darkMetal);
+      mag.position.set(0, -0.06, -0.0);
+      const gripM = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.08, 0.04), grip);
+      gripM.position.set(0, -0.06, 0.06);
+      const trigger2 = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.02, 0.025), metal);
+      trigger2.position.set(0, -0.04, 0.03);
+      const frontSight2 = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.025, 0.008), lightMetal);
+      frontSight2.position.set(0, 0.04, -0.34);
+      const rearSight2 = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.015, 0.012), lightMetal);
+      rearSight2.position.set(0, 0.055, 0.02);
+      group.add(stock, stockPad, receiver, receiverTop, handguard, barrelMesh, muzzle, mag, gripM, trigger2, frontSight2, rearSight2);
     }
     return group;
   }
@@ -212,15 +187,8 @@ export function createCSRenderer(): CSRenderer {
   function attachWeaponModel(weapon: WeaponType) {
     while (weaponModel.children.length) weaponModel.remove(weaponModel.children[0]);
 
-    const url = WEAPON_GLBS[weapon];
-    const cached = glbCache[url];
-    if (cached) {
-      const clone = cached.clone();
-      weaponModel.add(clone);
-    } else {
-      const fallback = createFallbackWeapon(weapon);
-      weaponModel.add(fallback);
-    }
+    const model = buildWeaponModel(weapon);
+    weaponModel.add(model);
 
     const off = WEAPON_OFFSETS[weapon];
     const rot = WEAPON_ROTATIONS[weapon];
@@ -230,7 +198,6 @@ export function createCSRenderer(): CSRenderer {
 
   function switchWeapon(weapon: WeaponType) {
     currentWeapon = weapon;
-    loadWeaponGLB(weapon);
     attachWeaponModel(weapon);
   }
 
