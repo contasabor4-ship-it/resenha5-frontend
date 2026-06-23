@@ -118,6 +118,10 @@ export default function CSGamePage() {
         setRound(state.round); setMaxRounds(state.maxRounds);
         setCtScore(state.ctScore); setTScore(state.tScore);
         setTimeLeft(state.timeLeft);
+        if (state.players) {
+          const myId = net.socket?.id;
+          enemiesRef.current.update(state.players.filter((p: any) => p.id !== myId));
+        }
       });
 
       net.onBullet((data: any) => rendererRef.current?.renderBullet(data));

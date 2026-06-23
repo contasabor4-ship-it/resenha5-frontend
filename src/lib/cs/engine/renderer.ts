@@ -267,20 +267,30 @@ export function createCSRenderer(): CSRenderer {
     const def = WEAPONS[bullet.weapon];
     const start = new THREE.Vector3(bullet.x, bullet.y, bullet.z);
     const dir = new THREE.Vector3(bullet.dx, bullet.dy, bullet.dz);
-    const end = start.clone().add(dir.multiplyScalar(def.range));
+    const len = Math.min(def.range, 120);
+    const end = start.clone().add(dir.clone().multiplyScalar(len));
 
     const points = [start, end];
     const geo = new THREE.BufferGeometry().setFromPoints(points);
-    const mat = new THREE.LineBasicMaterial({ color: 0xffff00, transparent: true, opacity: 0.5 });
+    const mat = new THREE.LineBasicMaterial({ color: 0xffff00, linewidth: 2 });
     const line = new THREE.Line(geo, mat);
     effectsGroup.add(line);
     bulletLines.push(line);
 
+    const flashGeo = new THREE.SphereGeometry(0.08, 4, 4);
+    const flashMat = new THREE.MeshBasicMaterial({ color: 0xffff44 });
+    const flash = new THREE.Mesh(flashGeo, flashMat);
+    flash.position.copy(start);
+    effectsGroup.add(flash);
+
     setTimeout(() => {
       effectsGroup.remove(line);
+      effectsGroup.remove(flash);
       geo.dispose();
       mat.dispose();
-    }, 80);
+      flashGeo.dispose();
+      flashMat.dispose();
+    }, 100);
 
     while (bulletLines.length > MAX_BULLET_LINES) {
       const old = bulletLines.shift();
