@@ -53,6 +53,7 @@ export default function CSGamePage() {
   const plLockedRef = useRef(false);
   const gameRunningRef = useRef(false);
   const hitMarkerTimeoutRef = useRef<any>(null);
+  const countdownTimerRef = useRef<any>(null);
   const lastFrameTimeRef = useRef(performance.now());
 
   useEffect(() => {
@@ -67,6 +68,8 @@ export default function CSGamePage() {
   useEffect(() => {
     return () => {
       gameRunningRef.current = false;
+      if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+      if (hitMarkerTimeoutRef.current) clearTimeout(hitMarkerTimeoutRef.current);
       netRef.current?.disconnect();
       rendererRef.current?.dispose();
     };
@@ -107,6 +110,8 @@ export default function CSGamePage() {
           lp.position.x = me.x; lp.position.y = me.y; lp.position.z = me.z;
           lp.health = me.health; lp.weapon = me.weapon; lp.ammo = me.ammo;
           lp.team = me.team;
+          lp.alive = me.isAlive;
+          lp.velocityY = 0; lp.grounded = true;
           setHealth(me.health); setAmmo(me.ammo); setWeapon(me.weapon);
         }
         (rendererRef.current?.camera as any).__ownerId = data.playerId;
@@ -165,11 +170,38 @@ export default function CSGamePage() {
       });
 
       net.onKillfeed((data: any) => setKillfeed(prev => [data, ...prev].slice(0, 5)));
-      net.onPlayerDied((data: any) => { if (data.victimId === net.socket?.id) setIsAlive(false); });
+      net.onPlayerDied((data: any) => {
+        if (data.victimId === net.socket?.id) {
+          setIsAlive(false);
+          lp.alive = false;
+        }
+      });
 
       net.onCountdown((data: any) => {
-        setCountdown(data.seconds);
-        if (data.seconds <= 0) { setCountdown(null); setStatus('playing'); setIsAlive(true); }
+        if (countdownTimerRef.current) { clearInterval(countdownTimerRef.current); countdownTimerRef.current = null; }
+        const startSec = data.seconds;
+        setCountdown(startSec);
+        if (startSec <= 0) {
+          setCountdown(null);
+          setStatus('playing');
+          setIsAlive(true);
+          lp.alive = true;
+          lp.velocityY = 0;
+          lp.grounded = true;
+        } else {
+          countdownTimerRef.current = setInterval(() => {
+            setCountdown(prev => {
+              if (prev === null || prev <= 1) {
+                if (countdownTimerRef.current) { clearInterval(countdownTimerRef.current); countdownTimerRef.current = null; }
+                lp.alive = true;
+                lp.velocityY = 0;
+                lp.grounded = true;
+                return null;
+              }
+              return prev - 1;
+            });
+          }, 1000);
+        }
       });
 
       net.onRoundEnd((data: any) => {
@@ -180,6 +212,7 @@ export default function CSGamePage() {
         setCtScore(data.ctScore); setTScore(data.tScore);
         setStatus('team_select');
         gameRunningRef.current = false;
+        if (countdownTimerRef.current) { clearInterval(countdownTimerRef.current); countdownTimerRef.current = null; }
         net.disconnect();
         rendererRef.current?.dispose();
       });

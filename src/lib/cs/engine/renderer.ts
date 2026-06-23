@@ -43,17 +43,17 @@ const WEAPON_GLBS: Record<WeaponType, string> = {
 };
 
 const WEAPON_SCALES: Record<WeaponType, number> = {
-  ak47: 1,
-  m4a1: 1,
-  deagle: 1,
-  knife: 1,
+  ak47: 0.35,
+  m4a1: 0.35,
+  deagle: 0.3,
+  knife: 0.25,
 };
 
 const WEAPON_OFFSETS: Record<WeaponType, { x: number; y: number; z: number }> = {
-  ak47: { x: 0.22, y: -0.22, z: -0.5 },
-  m4a1: { x: 0.22, y: -0.22, z: -0.5 },
-  deagle: { x: 0.18, y: -0.18, z: -0.35 },
-  knife: { x: 0.25, y: -0.25, z: -0.2 },
+  ak47: { x: 0.22, y: -0.25, z: -0.5 },
+  m4a1: { x: 0.22, y: -0.25, z: -0.5 },
+  deagle: { x: 0.18, y: -0.22, z: -0.35 },
+  knife: { x: 0.25, y: -0.3, z: -0.2 },
 };
 
 const WEAPON_ROTATIONS: Record<WeaponType, { x: number; y: number; z: number }> = {
