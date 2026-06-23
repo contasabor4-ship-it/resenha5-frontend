@@ -228,7 +228,10 @@ export default class HNSGame {
   getPlayerId() { return this.playerId; }
   isHostByName() {
     const nickname = localStorage.getItem('nickname') || 'Player';
-    return this.hostId === this.playerId || this.hostNickname === nickname;
+    if (this.hostId === this.playerId) return true;
+    if (this.hostNickname && this.hostNickname === nickname) return true;
+    if (this.players.length > 0 && this.players[0].id === this.playerId) return true;
+    return false;
   }
 
   leaveRoom() {

@@ -27,17 +27,29 @@ export default function HideAndSeekRoom() {
   useEffect(() => {
     if (roomState !== 'lobby' || !gameRef.current) return;
     const interval = setInterval(() => {
+      if (!gameRef.current) return;
       const hbn = gameRef.current?.isHostByName?.();
-      if (typeof hbn === 'boolean') {
-        setIsHost(hbn);
-      } else {
-        const hostId = gameRef.current?.getHostId?.() || '';
-        const playerId = gameRef.current?.getPlayerId?.() || '';
-        if (hostId && playerId) setIsHost(hostId === playerId);
+      if (typeof hbn === 'boolean' && hbn) {
+        setIsHost(true);
+        return;
+      }
+      const hostId = gameRef.current?.getHostId?.() || '';
+      const playerId = gameRef.current?.getPlayerId?.() || '';
+      if (hostId && playerId && hostId === playerId) {
+        setIsHost(true);
+        return;
+      }
+      if (players.length > 0 && playerId && players[0]?.id === playerId) {
+        setIsHost(true);
+        return;
+      }
+      const nickname = localStorage.getItem('nickname') || 'Player';
+      if (hostId && nickname && hbn === false) {
+        setIsHost(false);
       }
     }, 500);
     return () => clearInterval(interval);
-  }, [roomState]);
+  }, [roomState, players]);
 
   const handleStateChange = (state: string, data?: any) => {
     setRoomState(state as RoomState);

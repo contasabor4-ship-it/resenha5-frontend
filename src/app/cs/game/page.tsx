@@ -53,6 +53,7 @@ export default function CSGamePage() {
   const plLockedRef = useRef(false);
   const gameRunningRef = useRef(false);
   const hitMarkerTimeoutRef = useRef<any>(null);
+  const lastFrameTimeRef = useRef(performance.now());
 
   useEffect(() => {
     const saved = localStorage.getItem('r5_nickname');
@@ -108,6 +109,7 @@ export default function CSGamePage() {
           lp.team = me.team;
           setHealth(me.health); setAmmo(me.ammo); setWeapon(me.weapon);
         }
+        (rendererRef.current?.camera as any).__ownerId = data.playerId;
         setRound(data.match.round || 0);
         setMaxRounds(data.match.maxRounds || 15);
         setCtScore(data.match.ctScore || 0);
@@ -122,18 +124,24 @@ export default function CSGamePage() {
         enemiesRef.current.update(players.filter((p: any) => p.id !== myId));
         const me = players.find((p: any) => p.id === myId);
         if (me) {
+          const wasAlive = lp.alive;
           lp.alive = me.isAlive;
           setIsAlive(me.isAlive);
-          if (me.isAlive) {
+          lp.team = me.team;
+          setHealth(me.health);
+          setArmor(me.armor);
+          lp.weapon = me.weapon;
+          lp.ammo = me.ammo;
+          setWeapon(me.weapon);
+          setAmmo(me.ammo);
+          if (lp.reloading && me.ammo >= WEAPONS[me.weapon as WeaponType]?.ammo) {
+            lp.reloading = false;
+            setReloading(false);
+            setReloadProgress(0);
+          }
+          if (!wasAlive && me.isAlive) {
             lp.position.x = me.x; lp.position.y = me.y; lp.position.z = me.z;
-            lp.health = me.health; lp.weapon = me.weapon; lp.ammo = me.ammo;
-            lp.team = me.team;
-            setHealth(me.health); setAmmo(me.ammo); setWeapon(me.weapon); setArmor(me.armor);
-            if (lp.reloading && me.ammo >= WEAPONS[me.weapon as WeaponType]?.ammo) {
-              lp.reloading = false;
-              setReloading(false);
-              setReloadProgress(0);
-            }
+            lp.velocityY = 0; lp.grounded = true;
           }
         }
       });
@@ -148,9 +156,12 @@ export default function CSGamePage() {
 
       net.onHitEffect((data: any) => {
         rendererRef.current?.renderHitSpark(data.x, data.y, data.z);
-        setHitMarker(true);
-        if (hitMarkerTimeoutRef.current) clearTimeout(hitMarkerTimeoutRef.current);
-        hitMarkerTimeoutRef.current = setTimeout(() => setHitMarker(false), 150);
+        const myId = net.socket?.id;
+        if (data.targetId === myId) {
+          setHitMarker(true);
+          if (hitMarkerTimeoutRef.current) clearTimeout(hitMarkerTimeoutRef.current);
+          hitMarkerTimeoutRef.current = setTimeout(() => setHitMarker(false), 150);
+        }
       });
 
       net.onKillfeed((data: any) => setKillfeed(prev => [data, ...prev].slice(0, 5)));
@@ -259,6 +270,9 @@ export default function CSGamePage() {
   function gameLoop() {
     if (!gameRunningRef.current) return;
     const now = performance.now();
+    const rawDt = (now - lastFrameTimeRef.current) / 1000;
+    const dt = Math.min(rawDt, 0.05);
+    lastFrameTimeRef.current = now;
 
     const lp = lpRef.current;
     const r = rendererRef.current;
@@ -271,7 +285,7 @@ export default function CSGamePage() {
         setAmmo(WEAPONS[inputRef.current.weapon as WeaponType].ammo);
       }
 
-      const result = updateLocalPlayer(lp, inputRef.current, 1 / 60, () => DUST2.boxes);
+      const result = updateLocalPlayer(lp, inputRef.current, dt, () => DUST2.boxes);
       setHealth(lp.health);
       setAmmo(lp.ammo);
       setArmor(lp.armor);
@@ -336,7 +350,7 @@ export default function CSGamePage() {
       recoilRef.current *= 0.88;
       r.updateCamera(lp.position, lp.yaw, lp.pitch + recoilRef.current, inputRef.current.crouch);
       r.renderEnemies(enemiesRef.current.enemies, lp.team || 'CT');
-      r.updateParticles(1 / 60);
+      r.updateParticles(dt);
     }
 
     if (now - lastSendRef.current > 50 && lp) {
@@ -451,7 +465,7 @@ export default function CSGamePage() {
       )}
 
       {/* === CROSSHAIR === */}
-      {status === 'playing' && isAlive && !hitMarker && (
+      {status === 'playing' && isAlive && !hitMarker && countdown === null && (
         <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 10, pointerEvents: 'none' }}>
           <svg width="24" height="24" viewBox="0 0 24 24">
             <line x1="12" y1="4" x2="12" y2="10" stroke="#0f0" strokeWidth="1.5" opacity="0.8"/>

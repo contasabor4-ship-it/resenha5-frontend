@@ -26,35 +26,49 @@ export function createAssignments(
 }> {
   const playerIds = players.map((p) => p.id);
 
-  if (sourceIds.length !== playerIds.length) {
-    throw new Error('sourceIds length must match players length');
+  if (sourceIds.length < playerIds.length) {
+    console.warn(`createAssignments: sourceIds (${sourceIds.length}) < playerIds (${playerIds.length}), padding`);
+    while (sourceIds.length < playerIds.length) {
+      sourceIds.push(sourceIds[sourceIds.length % sourceIds.length]);
+    }
   }
 
-  let shuffledSources = shuffleArray(sourceIds);
+  let shuffledSources = shuffleArray([...sourceIds]);
   let attempts = 0;
-  const maxAttempts = 100;
+  const maxAttempts = 200;
 
   while (attempts < maxAttempts) {
     let hasConflict = false;
     for (let i = 0; i < playerIds.length; i++) {
-      if (shuffledSources[i] === sourceIds[i]) {
+      const playerOwnSource = sourceIds[i];
+      if (shuffledSources[i] === playerOwnSource) {
         hasConflict = true;
         break;
       }
     }
     if (!hasConflict) break;
-    shuffledSources = shuffleArray(sourceIds);
+    shuffledSources = shuffleArray([...sourceIds]);
     attempts++;
   }
 
   if (attempts >= maxAttempts) {
-    const reversed = [...sourceIds].reverse();
+    const used = new Set<string>();
+    shuffledSources = sourceIds.map((s) => {
+      let candidate = s;
+      let tries = 0;
+      while (used.has(candidate) && tries < sourceIds.length) {
+        tries++;
+        candidate = sourceIds[tries % sourceIds.length];
+      }
+      used.add(candidate);
+      return candidate;
+    });
     for (let i = 0; i < playerIds.length; i++) {
-      if (reversed[i] === sourceIds[i] && playerIds.length > 1) {
-        [reversed[0], reversed[i]] = [reversed[i], reversed[0]];
+      if (shuffledSources[i] === sourceIds[i] && playerIds.length > 1) {
+        const swapIdx = (i + 1) % playerIds.length;
+        [shuffledSources[i], shuffledSources[swapIdx]] = [shuffledSources[swapIdx], shuffledSources[i]];
       }
     }
-    shuffledSources = reversed;
   }
 
   return playerIds.map((playerId, i) => ({

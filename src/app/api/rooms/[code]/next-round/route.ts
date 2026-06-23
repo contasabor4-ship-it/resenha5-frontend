@@ -107,7 +107,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
         }
       }
 
-      // Pega UMA frase por jogador (usa uma subquery pra evitar duplicatas)
+      // Pega UMA frase por jogador
       const { data: phrases } = await supabaseAdmin
         .from('phrases')
         .select('id, author_id')
@@ -120,20 +120,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
         return NextResponse.json({ error: 'Nenhuma frase encontrada' }, { status: 500 });
       }
 
-      // Se houver mais frases que players, pega só a primeira de cada player
-      let deduped = phrases;
-      if (phrases.length > players.length) {
-        const seen = new Set<string>();
-        deduped = phrases.filter(p => {
-          if (seen.has(p.author_id)) return false;
-          seen.add(p.author_id);
-          return true;
-        });
-      }
+      const seenP = new Set<string>();
+      const deduped = phrases.filter(p => {
+        if (seenP.has(p.author_id)) return false;
+        seenP.add(p.author_id);
+        return true;
+      });
 
-      if (deduped.length !== players.length) {
-        return NextResponse.json({ error: 'Contagem de frases inválida' }, { status: 500 });
-      }
+      console.log(`Gartic writing→drawing: ${deduped.length} phrases, ${players.length} players`);
 
       const assignments = createAssignments(players, currentRound + 1, 'drawing', deduped.map((p) => p.id));
       const { error: aErr } = await supabaseAdmin.from('assignments').insert(
@@ -219,18 +213,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
         return NextResponse.json({ error: 'Nenhum desenho encontrado' }, { status: 500 });
       }
 
-      let dedupedD = drawings;
-      if (drawings.length > players.length) {
-        const seen = new Set<string>();
-        dedupedD = drawings.filter(d => {
-          if (seen.has(d.drawer_id)) return false;
-          seen.add(d.drawer_id);
-          return true;
-        });
-      }
+      const seenD = new Set<string>();
+      const dedupedD = drawings.filter(d => {
+        if (seenD.has(d.drawer_id)) return false;
+        seenD.add(d.drawer_id);
+        return true;
+      });
 
-      if (dedupedD.length !== players.length) {
-        return NextResponse.json({ error: 'Contagem de desenhos inválida' }, { status: 500 });
+      console.log(`Gartic drawing→guessing: ${dedupedD.length} drawings, ${players.length} players`);
+
+      if (dedupedD.length === 0) {
+        return NextResponse.json({ error: 'Nenhum desenho encontrado' }, { status: 500 });
       }
 
       const assignments = createAssignments(players, currentRound, 'guessing', dedupedD.map((d) => d.id));
@@ -330,20 +323,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
         return NextResponse.json({ error: 'Nenhum palpite encontrado' }, { status: 500 });
       }
 
-      // Deduplica palpites
-      let dedupedG = guesses;
-      if (guesses.length > players.length) {
-        const seen = new Set<string>();
-        dedupedG = guesses.filter(g => {
-          if (seen.has(g.guesser_id)) return false;
-          seen.add(g.guesser_id);
-          return true;
-        });
-      }
+      const seenG = new Set<string>();
+      const dedupedG = guesses.filter(g => {
+        if (seenG.has(g.guesser_id)) return false;
+        seenG.add(g.guesser_id);
+        return true;
+      });
 
-      if (dedupedG.length !== players.length) {
-        return NextResponse.json({ error: 'Contagem de palpites inválida' }, { status: 500 });
-      }
+      console.log(`Gartic guessing→next: ${dedupedG.length} guesses, ${players.length} players`);
 
       // Cria frases da próxima rodada (upsert)
       for (const g of dedupedG) {
@@ -375,19 +362,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
         return NextResponse.json({ error: 'Nenhuma nova frase' }, { status: 500 });
       }
 
-      let dedupedNP = newPhrases;
-      if (newPhrases.length > players.length) {
-        const seen = new Set<string>();
-        dedupedNP = newPhrases.filter(p => {
-          if (seen.has(p.author_id)) return false;
-          seen.add(p.author_id);
-          return true;
-        });
-      }
+      const seenNP = new Set<string>();
+      const dedupedNP = newPhrases.filter(p => {
+        if (seenNP.has(p.author_id)) return false;
+        seenNP.add(p.author_id);
+        return true;
+      });
 
-      if (dedupedNP.length !== players.length) {
-        return NextResponse.json({ error: 'Contagem de novas frases inválida' }, { status: 500 });
-      }
+      console.log(`Gartic guessing→drawing: ${dedupedNP.length} new phrases for next round`);
 
       const assignments = createAssignments(players, nextRound, 'drawing', dedupedNP.map((p) => p.id));
       const { error: aErr } = await supabaseAdmin.from('assignments').insert(

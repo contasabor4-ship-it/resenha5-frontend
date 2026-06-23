@@ -50,17 +50,17 @@ const WEAPON_SCALES: Record<WeaponType, number> = {
 };
 
 const WEAPON_OFFSETS: Record<WeaponType, { x: number; y: number; z: number }> = {
-  ak47: { x: 0.18, y: -0.18, z: -0.35 },
-  m4a1: { x: 0.18, y: -0.18, z: -0.35 },
-  deagle: { x: 0.15, y: -0.15, z: -0.25 },
-  knife: { x: 0.2, y: -0.2, z: -0.2 },
+  ak47: { x: 0.22, y: -0.22, z: -0.45 },
+  m4a1: { x: 0.22, y: -0.22, z: -0.45 },
+  deagle: { x: 0.18, y: -0.18, z: -0.3 },
+  knife: { x: 0.25, y: -0.25, z: -0.15 },
 };
 
 const WEAPON_ROTATIONS: Record<WeaponType, { x: number; y: number; z: number }> = {
-  ak47: { x: 0, y: Math.PI, z: 0 },
-  m4a1: { x: 0, y: Math.PI, z: 0 },
-  deagle: { x: 0, y: Math.PI, z: 0 },
-  knife: { x: -0.3, y: Math.PI, z: 0.2 },
+  ak47: { x: 0, y: Math.PI + 0.3, z: 0 },
+  m4a1: { x: 0, y: Math.PI + 0.3, z: 0 },
+  deagle: { x: 0, y: Math.PI, z: 0.1 },
+  knife: { x: -0.4, y: Math.PI + 0.5, z: 0.3 },
 };
 
 const glbLoader = new GLTFLoader();
@@ -321,7 +321,6 @@ export function createCSRenderer(): CSRenderer {
         );
         barFg.position.set(e.x - (1 - e.health / 100) * 0.5, e.y + 2.3, e.z + 0.01);
         barFg.lookAt(camera.position);
-        enemiesGroup.add(barBg);
         enemiesGroup.add(barFg);
       }
     }
@@ -342,7 +341,8 @@ export function createCSRenderer(): CSRenderer {
   }
 
   function renderBullet(bullet: BulletFireEvent) {
-    if (bullet.ownerId === (camera as any).__ownerId) return;
+    const ownerId = (camera as any).__ownerId;
+    if (ownerId && bullet.ownerId === ownerId) return;
 
     const def = WEAPONS[bullet.weapon];
     const start = new THREE.Vector3(bullet.x, bullet.y, bullet.z);
