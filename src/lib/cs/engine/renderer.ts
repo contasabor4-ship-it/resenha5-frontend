@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { CSMapDef, CSPlayerState, BulletHole, BulletFireEvent, WeaponType } from '../types';
 import { WEAPONS } from '../types';
 
@@ -34,6 +35,37 @@ const MAX_BULLET_HOLES = 100;
 const MAX_BULLET_LINES = 20;
 const MAX_PARTICLES = 80;
 
+const WEAPON_GLBS: Record<WeaponType, string> = {
+  ak47: '/weapons/ak47.glb',
+  m4a1: '/weapons/m4a1.glb',
+  deagle: '/weapons/deagle.glb',
+  knife: '/weapons/knife.glb',
+};
+
+const WEAPON_SCALES: Record<WeaponType, number> = {
+  ak47: 0.012,
+  m4a1: 0.012,
+  deagle: 0.015,
+  knife: 0.02,
+};
+
+const WEAPON_OFFSETS: Record<WeaponType, { x: number; y: number; z: number }> = {
+  ak47: { x: 0.18, y: -0.18, z: -0.35 },
+  m4a1: { x: 0.18, y: -0.18, z: -0.35 },
+  deagle: { x: 0.15, y: -0.15, z: -0.25 },
+  knife: { x: 0.2, y: -0.2, z: -0.2 },
+};
+
+const WEAPON_ROTATIONS: Record<WeaponType, { x: number; y: number; z: number }> = {
+  ak47: { x: 0, y: Math.PI, z: 0 },
+  m4a1: { x: 0, y: Math.PI, z: 0 },
+  deagle: { x: 0, y: Math.PI, z: 0 },
+  knife: { x: -0.3, y: Math.PI, z: 0.2 },
+};
+
+const glbLoader = new GLTFLoader();
+const glbCache: Record<string, THREE.Group> = {};
+
 export function createCSRenderer(): CSRenderer {
   let scene: THREE.Scene;
   let camera: THREE.PerspectiveCamera;
@@ -49,10 +81,11 @@ export function createCSRenderer(): CSRenderer {
   let muzzleFlash: THREE.PointLight | null = null;
   let mapBoxes: Array<{ x: number; y: number; z: number; w: number; h: number; d: number }> = [];
   let container: HTMLElement;
-  let weaponModel: THREE.Group;
+  let weaponModel: THREE.Group = new THREE.Group();
   let gunBobPhase = 0;
   let gunBobAmount = 0;
   let hitMarkerAlpha = 0;
+  let currentWeapon: WeaponType = 'ak47';
 
   function init(c: HTMLElement) {
     container = c;
@@ -79,7 +112,6 @@ export function createCSRenderer(): CSRenderer {
     effectsGroup = new THREE.Group();
     scene.add(effectsGroup);
 
-    weaponModel = createWeaponModel('ak47');
     camera.add(weaponModel);
     scene.add(camera);
 
@@ -87,9 +119,40 @@ export function createCSRenderer(): CSRenderer {
     crosshair.style.cssText = 'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:100;';
     c.style.position = 'relative';
     c.appendChild(crosshair);
+
+    loadWeaponGLB('ak47');
   }
 
-  function createWeaponModel(weapon: WeaponType): THREE.Group {
+  function loadWeaponGLB(weapon: WeaponType): void {
+    const url = WEAPON_GLBS[weapon];
+    if (glbCache[url]) return;
+
+    glbLoader.load(
+      url,
+      (gltf) => {
+        const model = gltf.scene;
+        model.traverse((child) => {
+          if ((child as THREE.Mesh).isMesh) {
+            const mesh = child as THREE.Mesh;
+            mesh.material = new THREE.MeshLambertMaterial({
+              color: (mesh.material as THREE.MeshStandardMaterial).color || new THREE.Color(0x888888),
+            });
+          }
+        });
+        const scale = WEAPON_SCALES[weapon];
+        model.scale.setScalar(scale);
+        glbCache[url] = model;
+        if (currentWeapon === weapon) attachWeaponModel(weapon);
+      },
+      undefined,
+      () => {
+        console.warn(`Failed to load GLB for ${weapon}, using fallback`);
+        createFallbackWeapon(weapon);
+      }
+    );
+  }
+
+  function createFallbackWeapon(weapon: WeaponType): THREE.Group {
     const group = new THREE.Group();
     const bodyMat = new THREE.MeshLambertMaterial({ color: 0x2a2a2a });
     const accentMat = new THREE.MeshLambertMaterial({ color: 0x4a4a4a });
@@ -104,10 +167,7 @@ export function createCSRenderer(): CSRenderer {
       const grip = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.08, 0.04), bodyMat);
       const slide = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.04, 0.14), accentMat);
       slide.position.set(0, 0.05, -0.05);
-      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.08), bodyMat);
-      barrel.rotation.x = Math.PI / 2;
-      barrel.position.set(0, 0.05, -0.14);
-      group.add(grip, slide, barrel);
+      group.add(grip, slide);
     } else {
       const stock = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.06, 0.12), weapon === 'm4a1' ? bodyMat : woodMat);
       stock.position.set(0, -0.01, 0.08);
@@ -116,20 +176,34 @@ export function createCSRenderer(): CSRenderer {
       const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.01, 0.16), accentMat);
       barrel.rotation.x = Math.PI / 2;
       barrel.position.set(0, 0.03, -0.18);
-      const mag = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.08, 0.03), bodyMat);
-      mag.position.set(0, -0.05, -0.02);
-      mag.rotation.x = 0.15;
-      group.add(stock, body, barrel, mag);
+      group.add(stock, body, barrel);
     }
-
-    group.position.set(0.25, -0.22, -0.4);
     return group;
   }
 
+  function attachWeaponModel(weapon: WeaponType) {
+    while (weaponModel.children.length) weaponModel.remove(weaponModel.children[0]);
+
+    const url = WEAPON_GLBS[weapon];
+    const cached = glbCache[url];
+    if (cached) {
+      const clone = cached.clone();
+      weaponModel.add(clone);
+    } else {
+      const fallback = createFallbackWeapon(weapon);
+      weaponModel.add(fallback);
+    }
+
+    const off = WEAPON_OFFSETS[weapon];
+    const rot = WEAPON_ROTATIONS[weapon];
+    weaponModel.position.set(off.x, off.y, off.z);
+    weaponModel.rotation.set(rot.x, rot.y, rot.z);
+  }
+
   function switchWeapon(weapon: WeaponType) {
-    if (weaponModel.parent) weaponModel.parent.remove(weaponModel);
-    weaponModel = createWeaponModel(weapon);
-    camera.add(weaponModel);
+    currentWeapon = weapon;
+    loadWeaponGLB(weapon);
+    attachWeaponModel(weapon);
   }
 
   function buildMap(map: CSMapDef) {
@@ -183,10 +257,11 @@ export function createCSRenderer(): CSRenderer {
     renderer.render(scene, camera);
   }
 
+  const enemyMeshPool: THREE.Group[] = [];
+
   function renderEnemies(enemies: CSPlayerState[], localTeam: string) {
     while (enemiesGroup.children.length) {
-      const child = enemiesGroup.children[0];
-      enemiesGroup.remove(child);
+      enemiesGroup.remove(enemiesGroup.children[0]);
     }
 
     for (const e of enemies) {
@@ -246,6 +321,7 @@ export function createCSRenderer(): CSRenderer {
         );
         barFg.position.set(e.x - (1 - e.health / 100) * 0.5, e.y + 2.3, e.z + 0.01);
         barFg.lookAt(camera.position);
+        enemiesGroup.add(barBg);
         enemiesGroup.add(barFg);
       }
     }
@@ -266,6 +342,8 @@ export function createCSRenderer(): CSRenderer {
   }
 
   function renderBullet(bullet: BulletFireEvent) {
+    if (bullet.ownerId === (camera as any).__ownerId) return;
+
     const def = WEAPONS[bullet.weapon];
     const start = new THREE.Vector3(bullet.x, bullet.y, bullet.z);
     const dir = new THREE.Vector3(bullet.dx, bullet.dy, bullet.dz).normalize();
@@ -404,9 +482,10 @@ export function createCSRenderer(): CSRenderer {
 
     gunBobPhase += 0.08;
     gunBobAmount *= 0.9;
+    const off = WEAPON_OFFSETS[currentWeapon];
     const bobX = Math.sin(gunBobPhase) * gunBobAmount * 0.01;
     const bobY = Math.abs(Math.cos(gunBobPhase)) * gunBobAmount * 0.008;
-    weaponModel.position.set(0.25 + bobX, -0.22 + bobY, -0.4);
+    weaponModel.position.set(off.x + bobX, off.y + bobY, off.z);
   }
 
   function resize() {

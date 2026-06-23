@@ -8,6 +8,7 @@ import { DUST2 } from '../../../lib/cs/maps/dust2';
 import { createCSRenderer } from '../../../lib/cs/engine/renderer';
 import { createLocalPlayer, updateLocalPlayer } from '../../../lib/cs/engine/player';
 import { createEnemyManager } from '../../../lib/cs/engine/enemies';
+import MobileControls, { isMobileDevice, MobileInput } from '../../../lib/cs/engine/MobileControls';
 
 const CS_SERVER_URL = process.env.NEXT_PUBLIC_CS_SERVER_URL || process.env.NEXT_PUBLIC_GAME_SERVER_URL || '';
 
@@ -39,6 +40,7 @@ export default function CSGamePage() {
   const [hitMarker, setHitMarker] = useState(false);
   const [reloading, setReloading] = useState(false);
   const [reloadProgress, setReloadProgress] = useState(0);
+  const [isMobile, setIsMobile] = useState(false);
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<any>(null);
@@ -50,13 +52,13 @@ export default function CSGamePage() {
   const lastSendRef = useRef(0);
   const plLockedRef = useRef(false);
   const gameRunningRef = useRef(false);
-  const lastShotRef = useRef(0);
   const hitMarkerTimeoutRef = useRef<any>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem('r5_nickname');
     if (!saved) { router.push('/'); return; }
     setNickname(saved);
+    setIsMobile(isMobileDevice());
   }, []);
 
   useEffect(() => { plLockedRef.current = pointerLocked; }, [pointerLocked]);
@@ -120,8 +122,19 @@ export default function CSGamePage() {
         enemiesRef.current.update(players.filter((p: any) => p.id !== myId));
         const me = players.find((p: any) => p.id === myId);
         if (me) {
+          lp.alive = me.isAlive;
           setIsAlive(me.isAlive);
-          if (me.isAlive) { setHealth(me.health); setWeapon(me.weapon); setArmor(me.armor); }
+          if (me.isAlive) {
+            lp.position.x = me.x; lp.position.y = me.y; lp.position.z = me.z;
+            lp.health = me.health; lp.weapon = me.weapon; lp.ammo = me.ammo;
+            lp.team = me.team;
+            setHealth(me.health); setAmmo(me.ammo); setWeapon(me.weapon); setArmor(me.armor);
+            if (lp.reloading && me.ammo >= WEAPONS[me.weapon as WeaponType]?.ammo) {
+              lp.reloading = false;
+              setReloading(false);
+              setReloadProgress(0);
+            }
+          }
         }
       });
 
@@ -129,10 +142,6 @@ export default function CSGamePage() {
         setRound(state.round); setMaxRounds(state.maxRounds);
         setCtScore(state.ctScore); setTScore(state.tScore);
         setTimeLeft(state.timeLeft);
-        if (state.players) {
-          const myId = net.socket?.id;
-          enemiesRef.current.update(state.players.filter((p: any) => p.id !== myId));
-        }
       });
 
       net.onBullet((data: any) => rendererRef.current?.renderBullet(data));
@@ -216,6 +225,20 @@ export default function CSGamePage() {
       const onPtrLock = () => setPointerLocked(!!document.pointerLockElement);
       const onResize = () => renderer.resize();
 
+      const onTouchAim = (e: TouchEvent) => {
+        if (!isMobileDevice()) return;
+        for (let i = 0; i < e.touches.length; i++) {
+          const touch = e.touches[i];
+          const x = (touch.clientX / window.innerWidth) * 2 - 1;
+          const y = (touch.clientY / window.innerHeight) * 2 - 1;
+          if (x > -0.2) {
+            inputRef.current.yaw -= (touch as any)._dx * 0.004 || 0;
+            inputRef.current.pitch = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2,
+              inputRef.current.pitch - (touch as any)._dy * 0.004 || 0));
+          }
+        }
+      };
+
       document.addEventListener('keydown', onKey);
       document.addEventListener('keyup', onKey);
       document.addEventListener('mousemove', onMouse);
@@ -223,6 +246,9 @@ export default function CSGamePage() {
       document.addEventListener('mouseup', onMouseUp);
       document.addEventListener('pointerlockchange', onPtrLock);
       window.addEventListener('resize', onResize);
+      if (isMobileDevice()) {
+        document.addEventListener('touchmove', onTouchAim, { passive: false });
+      }
 
     } catch (err) {
       console.error('CS: startGame error', err);
@@ -250,6 +276,11 @@ export default function CSGamePage() {
       setAmmo(lp.ammo);
       setArmor(lp.armor);
 
+      if (!lp.reloading && reloading) {
+        setReloading(false);
+        setReloadProgress(0);
+      }
+
       if (lp.reloading) {
         const def = WEAPONS[lp.weapon as WeaponType];
         const elapsed = now - lp.reloadStartTime;
@@ -268,18 +299,26 @@ export default function CSGamePage() {
           fwd.normalize();
 
           let hitId: string | undefined;
+          let hitY = 0;
           const origin = new THREE.Vector3(lp.position.x, eyeY, lp.position.z);
           for (const e of enemiesRef.current.enemies) {
-            const ePos = new THREE.Vector3(e.x, e.y + 1, e.z);
-            const toEnemy = ePos.clone().sub(origin);
-            const dot = toEnemy.dot(fwd);
-            if (dot > 0 && dot < def.range) {
-              const closest = origin.clone().add(fwd.clone().multiplyScalar(dot));
-              if (closest.distanceTo(ePos) < 0.6) { hitId = e.id; break; }
+            const bodyPos = new THREE.Vector3(e.x, e.y + 1.2, e.z);
+            const headPos = new THREE.Vector3(e.x, e.y + 1.85, e.z);
+            const toBody = bodyPos.clone().sub(origin);
+            const dotBody = toBody.dot(fwd);
+            if (dotBody > 0 && dotBody < def.range) {
+              const closest = origin.clone().add(fwd.clone().multiplyScalar(dotBody));
+              if (closest.distanceTo(bodyPos) < 0.6) { hitId = e.id; hitY = bodyPos.y; break; }
+            }
+            const toHead = headPos.clone().sub(origin);
+            const dotHead = toHead.dot(fwd);
+            if (dotHead > 0 && dotHead < def.range) {
+              const closestH = origin.clone().add(fwd.clone().multiplyScalar(dotHead));
+              if (closestH.distanceTo(headPos) < 0.35) { hitId = e.id; hitY = headPos.y; break; }
             }
           }
 
-          netRef.current?.shoot({ x: origin.x, y: eyeY, z: origin.z, dx: fwd.x, dy: fwd.y, dz: fwd.z, weapon: lp.weapon, hitId });
+          netRef.current?.shoot({ x: origin.x, y: eyeY, z: origin.z, dx: fwd.x, dy: fwd.y, dz: fwd.z, weapon: lp.weapon, hitId, hitY });
           r.renderMuzzleFlash(origin.x + fwd.x * 0.5, eyeY + fwd.y * 0.5, origin.z + fwd.z * 0.5);
           recoilRef.current = def.recoilY;
       } else if (result.shot && lp.weapon === 'knife') {
@@ -288,7 +327,7 @@ export default function CSGamePage() {
           for (const e of enemiesRef.current.enemies) {
             const ePos = new THREE.Vector3(e.x, e.y + 1, e.z);
             if (origin.distanceTo(ePos) < 3) {
-              netRef.current?.shoot({ x: origin.x, y: eyeY, z: origin.z, dx: 0, dy: 0, dz: -1, weapon: 'knife', hitId: e.id });
+              netRef.current?.shoot({ x: origin.x, y: eyeY, z: origin.z, dx: 0, dy: 0, dz: -1, weapon: 'knife', hitId: e.id, hitY: eyeY });
               break;
             }
           }
@@ -301,7 +340,7 @@ export default function CSGamePage() {
     }
 
     if (now - lastSendRef.current > 50 && lp) {
-      netRef.current?.sendState({ x: lp.position.x, y: lp.position.y, z: lp.position.z, yaw: lp.yaw, pitch: lp.pitch, health: lp.health, armor: lp.armor, weapon: lp.weapon, ammo: lp.ammo, isAlive: lp.alive });
+      netRef.current?.sendState({ x: lp.position.x, y: lp.position.y, z: lp.position.z, yaw: lp.yaw, pitch: lp.pitch, weapon: lp.weapon });
       lastSendRef.current = now;
     }
 
@@ -310,8 +349,21 @@ export default function CSGamePage() {
   }
 
   const handleClick = useCallback(() => {
-    if (!pointerLocked && isAlive && status === 'playing') canvasRef.current?.requestPointerLock();
-  }, [pointerLocked, isAlive, status]);
+    if (!isMobile && !pointerLocked && isAlive && status === 'playing') canvasRef.current?.requestPointerLock();
+  }, [pointerLocked, isAlive, status, isMobile]);
+
+  const mobileInputRef = useRef({ lastX: 0, lastY: 0 });
+
+  const handleMobileInput = useCallback((input: Partial<MobileInput>) => {
+    if (input.forward !== undefined) inputRef.current.forward = input.forward;
+    if (input.backward !== undefined) inputRef.current.backward = input.backward;
+    if (input.left !== undefined) inputRef.current.left = input.left;
+    if (input.right !== undefined) inputRef.current.right = input.right;
+    if (input.yaw !== undefined) inputRef.current.yaw += input.yaw;
+    if (input.pitch !== undefined) {
+      inputRef.current.pitch = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, inputRef.current.pitch + input.pitch));
+    }
+  }, []);
 
   if (!nickname) return null;
 
@@ -463,13 +515,17 @@ export default function CSGamePage() {
 
           {/* Controls hint */}
           <div style={{ position: 'absolute', bottom: 80, left: '50%', transform: 'translateX(-50%)', zIndex: 10, pointerEvents: 'none', textAlign: 'center' }}>
-            <span style={{ color: '#555', fontSize: 10, letterSpacing: 0.5 }}>WASD Mover | Shift Correr | Ctrl Agachar | 1/2/3 Armas | R Recarregar</span>
+            {!isMobile ? (
+              <span style={{ color: '#555', fontSize: 10, letterSpacing: 0.5 }}>WASD Mover | Shift Correr | Ctrl Agachar | 1/2/3 Armas | R Recarregar</span>
+            ) : (
+              <span style={{ color: '#555', fontSize: 10, letterSpacing: 0.5 }}>Joystick Mover | Toque Direito Mirar | Botao Atirar</span>
+            )}
           </div>
         </>
       )}
 
       {/* === CLICK TO PLAY OVERLAY === */}
-      {status === 'playing' && !pointerLocked && isAlive && (
+      {status === 'playing' && !pointerLocked && isAlive && !isMobile && (
         <div onClick={handleClick} style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.4)', zIndex: 20, cursor: 'pointer' }}>
           <div style={{ textAlign: 'center', color: '#fff' }}>
             <p style={{ fontSize: 24, fontWeight: 'bold' }}>Clique para jogar</p>
@@ -495,7 +551,39 @@ export default function CSGamePage() {
         </div>
       )}
 
-      <div ref={canvasRef} onClick={handleClick} style={{ width: '100%', height: '100%' }} />
+      {/* === MOBILE CONTROLS === */}
+      {isMobile && status === 'playing' && (
+        <MobileControls
+          onInput={handleMobileInput}
+          onShootStart={() => { inputRef.current.shooting = true; }}
+          onShootEnd={() => { inputRef.current.shooting = false; }}
+          onJump={() => { inputRef.current.jump = true; setTimeout(() => { inputRef.current.jump = false; }, 100); }}
+          onCrouch={(down) => { inputRef.current.crouch = down; }}
+          onReload={() => {
+            const lp = lpRef.current;
+            if (lp && lp.ammo < WEAPONS[lp.weapon as WeaponType].ammo && lp.weapon !== 'knife' && !lp.reloading) {
+              lp.reloading = true;
+              lp.reloadStartTime = performance.now();
+              setReloading(true);
+              setReloadProgress(0);
+            }
+          }}
+          onWeapon={(w) => {
+            inputRef.current.weapon = w;
+            const lp = lpRef.current;
+            if (lp) {
+              lp.weapon = w;
+              lp.ammo = WEAPONS[w].ammo;
+              rendererRef.current?.switchWeapon(w);
+              setWeapon(w);
+              setAmmo(WEAPONS[w].ammo);
+            }
+          }}
+          isAlive={isAlive}
+        />
+      )}
+
+      <div ref={canvasRef} onClick={handleClick} style={{ width: '100%', height: '100%', touchAction: isMobile ? 'none' : 'auto' }} />
     </div>
   );
 }

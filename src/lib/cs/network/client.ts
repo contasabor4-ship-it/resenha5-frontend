@@ -7,7 +7,7 @@ export interface CSNetworkClient {
   joinMatch(team: 'CT' | 'T'): void;
   leaveMatch(): void;
   sendState(state: Partial<CSPlayerState>): void;
-  shoot(data: { x: number; y: number; z: number; dx: number; dy: number; dz: number; weapon: WeaponType; hitId?: string }): void;
+  shoot(data: { x: number; y: number; z: number; dx: number; dy: number; dz: number; weapon: WeaponType; hitId?: string; hitY?: number }): void;
   onMatchJoined(cb: (data: { playerId: string; match: any; players: CSPlayerState[] }) => void): void;
   onPlayersUpdate(cb: (players: CSPlayerState[]) => void): void;
   onGameState(cb: (state: CSRoomState) => void): void;
@@ -74,7 +74,7 @@ export function createCSNetworkClient(): CSNetworkClient {
     socket?.emit('player_state', state);
   }
 
-  function shoot(data: { x: number; y: number; z: number; dx: number; dy: number; dz: number; weapon: WeaponType; hitId?: string }) {
+  function shoot(data: { x: number; y: number; z: number; dx: number; dy: number; dz: number; weapon: WeaponType; hitId?: string; hitY?: number }) {
     socket?.emit('shoot', data);
   }
 
