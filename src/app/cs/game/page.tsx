@@ -132,8 +132,6 @@ export default function CSGamePage() {
         enemiesRef.current.update(players.filter((p: any) => p.id !== myId));
         const me = players.find((p: any) => p.id === myId);
         if (me) {
-          const wasAlive = lp.alive;
-          lp.team = me.team;
           setHealth(me.health);
           setArmor(me.armor);
           lp.weapon = me.weapon;
@@ -141,15 +139,10 @@ export default function CSGamePage() {
           setWeapon(me.weapon);
           setAmmo(me.ammo);
           if (me.health <= 0 || !me.isAlive) {
-            if (wasAlive) {
-              console.log('[CS DEBUG] player died, health=' + me.health);
-              lp.alive = false;
-              setIsAlive(false);
-              onPlayerDied();
-            }
+            lp.alive = false;
+            setIsAlive(false);
           } else {
-            if (!wasAlive) {
-              console.log('[CS DEBUG] respawned at', me.x, me.y, me.z);
+            if (!lp.alive) {
               lp.position.x = me.x; lp.position.y = me.y; lp.position.z = me.z;
               lp.velocityY = 0; lp.grounded = true;
             }
@@ -161,8 +154,6 @@ export default function CSGamePage() {
             setReloading(false);
             setReloadProgress(0);
           }
-        } else {
-          console.log('[CS DEBUG] my player NOT found in players_update! myId=' + myId + ' players=' + players.map((p:any)=>p.id).join(','));
         }
       });
 
@@ -357,7 +348,7 @@ export default function CSGamePage() {
       }
 
       const inp = inputRef.current;
-      const result = updateLocalPlayer(lp, inp, dt, () => DUST2.boxes);
+      const result = updateLocalPlayer(lp, inp, dt, () => r.getMapBoxes());
 
       if (debugFrameCountRef.current % 30 === 0) {
         console.log('[CS MOVE] alive=' + lp.alive + ' inp:F=' + inp.forward + ' B=' + inp.backward + ' L=' + inp.left + ' R=' + inp.right +
