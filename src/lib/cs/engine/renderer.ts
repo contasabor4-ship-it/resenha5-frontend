@@ -194,6 +194,7 @@ export function createCSRenderer(): CSRenderer {
     while (weaponModel.children.length) weaponModel.remove(weaponModel.children[0]);
 
     const model = buildWeaponModel(weapon);
+    model.scale.setScalar(2.2);
     weaponModel.add(model);
 
     const off = WEAPON_OFFSETS[weapon];

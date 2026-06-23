@@ -250,6 +250,7 @@ export default function CSGamePage() {
       const onKey = (e: KeyboardEvent) => {
         const down = e.type === 'keydown';
         const i = inputRef.current;
+        if (down) console.log('[CS KEY] keydown:', e.code, 'lp.alive=' + lp.alive);
         switch (e.code) {
           case 'KeyW': i.forward = down; break;
           case 'KeyS': i.backward = down; break;
@@ -349,7 +350,15 @@ export default function CSGamePage() {
         setAmmo(WEAPONS[inputRef.current.weapon as WeaponType].ammo);
       }
 
-      const result = updateLocalPlayer(lp, inputRef.current, dt, () => DUST2.boxes);
+      const inp = inputRef.current;
+      const result = updateLocalPlayer(lp, inp, dt, () => DUST2.boxes);
+
+      if (debugFrameCountRef.current % 30 === 0) {
+        console.log('[CS MOVE] alive=' + lp.alive + ' inp:F=' + inp.forward + ' B=' + inp.backward + ' L=' + inp.left + ' R=' + inp.right +
+          ' pos=' + lp.position.x.toFixed(1) + ',' + lp.position.y.toFixed(1) + ',' + lp.position.z.toFixed(1) +
+          ' shot=' + result.shot + ' dt=' + dt.toFixed(3));
+      }
+
       setHealth(lp.health);
       setAmmo(lp.ammo);
       setArmor(lp.armor);
