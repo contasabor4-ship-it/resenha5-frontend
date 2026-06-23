@@ -35,17 +35,17 @@ const MAX_BULLET_LINES = 20;
 const MAX_PARTICLES = 80;
 
 const WEAPON_OFFSETS: Record<WeaponType, { x: number; y: number; z: number }> = {
-  ak47: { x: 0.28, y: -0.32, z: -0.55 },
-  m4a1: { x: 0.28, y: -0.32, z: -0.55 },
-  deagle: { x: 0.22, y: -0.28, z: -0.4 },
-  knife: { x: 0.22, y: -0.3, z: -0.25 },
+  ak47: { x: 0.25, y: -0.28, z: -0.45 },
+  m4a1: { x: 0.25, y: -0.28, z: -0.45 },
+  deagle: { x: 0.2, y: -0.25, z: -0.35 },
+  knife: { x: 0.18, y: -0.25, z: -0.2 },
 };
 
 const WEAPON_ROTATIONS: Record<WeaponType, { x: number; y: number; z: number }> = {
-  ak47: { x: -0.1, y: Math.PI + 0.4, z: 0 },
-  m4a1: { x: -0.1, y: Math.PI + 0.4, z: 0 },
-  deagle: { x: -0.05, y: Math.PI + 0.3, z: 0.08 },
-  knife: { x: -0.3, y: Math.PI + 0.5, z: 0.2 },
+  ak47: { x: -0.15, y: 0.4, z: 0.05 },
+  m4a1: { x: -0.15, y: 0.4, z: 0.05 },
+  deagle: { x: -0.1, y: 0.3, z: 0.1 },
+  knife: { x: -0.5, y: 0.8, z: 0.3 },
 };
 
 export function createCSRenderer(): CSRenderer {
@@ -86,9 +86,12 @@ export function createCSRenderer(): CSRenderer {
     const dirLight = new THREE.DirectionalLight(0xfff5e1, 0.9);
     dirLight.position.set(30, 50, 20);
     scene.add(dirLight);
-    const weaponLight = new THREE.PointLight(0xffffff, 1.5, 5);
-    weaponLight.position.set(0, 0.3, -0.5);
+    const weaponLight = new THREE.PointLight(0xffffff, 2.0, 5);
+    weaponLight.position.set(0.2, 0.1, -0.3);
     camera.add(weaponLight);
+    const weaponLight2 = new THREE.PointLight(0xffffff, 1.0, 3);
+    weaponLight2.position.set(-0.1, 0.2, 0);
+    camera.add(weaponLight2);
 
     mapGroup = new THREE.Group();
     scene.add(mapGroup);
@@ -110,12 +113,12 @@ export function createCSRenderer(): CSRenderer {
 
   function buildWeaponModel(weapon: WeaponType): THREE.Group {
     const group = new THREE.Group();
-    const darkMetal = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
-    const metal = new THREE.MeshLambertMaterial({ color: 0x3a3a3a });
-    const lightMetal = new THREE.MeshLambertMaterial({ color: 0x666666 });
-    const wood = new THREE.MeshLambertMaterial({ color: 0x6B3A1F });
-    const woodDark = new THREE.MeshLambertMaterial({ color: 0x4A2810 });
-    const grip = new THREE.MeshLambertMaterial({ color: 0x222222 });
+    const darkMetal = new THREE.MeshLambertMaterial({ color: 0x2a2a2a });
+    const metal = new THREE.MeshLambertMaterial({ color: 0x4a4a4a });
+    const lightMetal = new THREE.MeshLambertMaterial({ color: 0x777777 });
+    const wood = new THREE.MeshLambertMaterial({ color: 0x8B5A2F });
+    const woodDark = new THREE.MeshLambertMaterial({ color: 0x6A3A15 });
+    const gripMat = new THREE.MeshLambertMaterial({ color: 0x333333 });
 
     if (weapon === 'knife') {
       const handle = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.14, 0.04), woodDark);
@@ -131,7 +134,7 @@ export function createCSRenderer(): CSRenderer {
       edge.position.set(0.005, 0.21, 0);
       group.add(handle, wrap1, wrap2, guard, blade, edge);
     } else if (weapon === 'deagle') {
-      const gripMesh = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.12, 0.06), grip);
+      const gripMesh = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.12, 0.06), gripMat);
       gripMesh.position.set(0, -0.1, 0.03);
       const trigger = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.025, 0.03), metal);
       trigger.position.set(0, -0.06, -0.01);
@@ -155,7 +158,7 @@ export function createCSRenderer(): CSRenderer {
       const isM4 = weapon === 'm4a1';
       const stock = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.065, 0.16), isM4 ? metal : wood);
       stock.position.set(0, -0.01, 0.14);
-      const stockPad = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.06, 0.02), isM4 ? grip : woodDark);
+      const stockPad = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.06, 0.02), isM4 ? gripMat : woodDark);
       stockPad.position.set(0, -0.01, 0.22);
       const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.048, 0.06, 0.2), metal);
       receiver.position.set(0, 0.01, -0.02);
@@ -171,7 +174,7 @@ export function createCSRenderer(): CSRenderer {
       muzzle.position.set(0, 0.005, -0.5);
       const mag = new THREE.Mesh(new THREE.BoxGeometry(0.028, 0.1, 0.04), isM4 ? metal : darkMetal);
       mag.position.set(0, -0.06, -0.0);
-      const gripM = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.08, 0.04), grip);
+      const gripM = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.08, 0.04), gripMat);
       gripM.position.set(0, -0.06, 0.06);
       const trigger2 = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.02, 0.025), metal);
       trigger2.position.set(0, -0.04, 0.03);
