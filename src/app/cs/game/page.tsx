@@ -111,7 +111,7 @@ export default function CSGamePage() {
           lp.position.x = me.x; lp.position.y = me.y; lp.position.z = me.z;
           lp.health = me.health; lp.weapon = me.weapon; lp.ammo = me.ammo;
           lp.team = me.team;
-          lp.alive = me.isAlive;
+          lp.alive = true;
           lp.velocityY = 0; lp.grounded = true;
           setHealth(me.health); setAmmo(me.ammo); setWeapon(me.weapon);
         } else {
@@ -133,11 +133,6 @@ export default function CSGamePage() {
         const me = players.find((p: any) => p.id === myId);
         if (me) {
           const wasAlive = lp.alive;
-          if (wasAlive !== me.isAlive) {
-            console.log('[CS DEBUG] alive changed: ' + wasAlive + ' -> ' + me.isAlive + ' (from server)');
-          }
-          lp.alive = me.isAlive;
-          setIsAlive(me.isAlive);
           lp.team = me.team;
           setHealth(me.health);
           setArmor(me.armor);
@@ -145,15 +140,26 @@ export default function CSGamePage() {
           lp.ammo = me.ammo;
           setWeapon(me.weapon);
           setAmmo(me.ammo);
+          if (me.health <= 0 || !me.isAlive) {
+            if (wasAlive) {
+              console.log('[CS DEBUG] player died, health=' + me.health);
+              lp.alive = false;
+              setIsAlive(false);
+              onPlayerDied();
+            }
+          } else {
+            if (!wasAlive) {
+              console.log('[CS DEBUG] respawned at', me.x, me.y, me.z);
+              lp.position.x = me.x; lp.position.y = me.y; lp.position.z = me.z;
+              lp.velocityY = 0; lp.grounded = true;
+            }
+            lp.alive = true;
+            setIsAlive(true);
+          }
           if (lp.reloading && me.ammo >= WEAPONS[me.weapon as WeaponType]?.ammo) {
             lp.reloading = false;
             setReloading(false);
             setReloadProgress(0);
-          }
-          if (!wasAlive && me.isAlive) {
-            console.log('[CS DEBUG] respawned at', me.x, me.y, me.z);
-            lp.position.x = me.x; lp.position.y = me.y; lp.position.z = me.z;
-            lp.velocityY = 0; lp.grounded = true;
           }
         } else {
           console.log('[CS DEBUG] my player NOT found in players_update! myId=' + myId + ' players=' + players.map((p:any)=>p.id).join(','));
