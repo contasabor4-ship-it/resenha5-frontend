@@ -100,6 +100,7 @@ export interface CSMapDef {
   name: string;
   spawnCT: Vec3;
   spawnT: Vec3;
+  glbPath?: string;
   boxes: Array<{ x: number; y: number; z: number; w: number; h: number; d: number; color: number }>;
   floors: Array<{ x: number; z: number; w: number; d: number; color: number }>;
 }

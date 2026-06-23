@@ -75,7 +75,7 @@ export default function CSGamePage() {
     };
   }, []);
 
-  const startGame = useCallback((selectedTeam: 'CT' | 'T') => {
+  const startGame = useCallback(async (selectedTeam: 'CT' | 'T') => {
     setTeam(selectedTeam);
     setStatus('connecting');
 
@@ -86,7 +86,7 @@ export default function CSGamePage() {
       } else {
         console.error('Canvas ref is null');
       }
-      renderer.buildMap(DUST2);
+      await renderer.buildMap(DUST2);
       renderer.switchWeapon(selectedTeam === 'CT' ? 'm4a1' : 'ak47');
       rendererRef.current = renderer;
 

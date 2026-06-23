@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
 import { CSMapDef, CSPlayerState, BulletHole, BulletFireEvent, WeaponType } from '../types';
 import { WEAPONS } from '../types';
 
@@ -11,7 +12,7 @@ export interface CSRenderer {
   effectsGroup: THREE.Group;
   crosshair: HTMLDivElement;
   init(container: HTMLElement): void;
-  buildMap(map: CSMapDef): void;
+  buildMap(map: CSMapDef): Promise<void>;
   renderMap(): void;
   getMapBoxes(): Array<{ x: number; y: number; z: number; w: number; h: number; d: number }>;
   renderEnemies(enemies: CSPlayerState[], localTeam: string): void;
@@ -209,10 +210,79 @@ export function createCSRenderer(): CSRenderer {
     attachWeaponModel(weapon);
   }
 
-  function buildMap(map: CSMapDef) {
+  function buildMap(map: CSMapDef): Promise<void> {
     while (mapGroup.children.length) mapGroup.remove(mapGroup.children[0]);
     mapBoxes = [];
 
+    if (map.glbPath) {
+      return new Promise<void>((resolve) => {
+        const loader = new GLTFLoader();
+        loader.load(map.glbPath!, (gltf) => {
+          const model = gltf.scene;
+          model.traverse((child) => {
+            if (child instanceof THREE.Mesh) {
+              child.castShadow = true;
+              child.receiveShadow = true;
+              if (child.material) {
+                if (Array.isArray(child.material)) {
+                  child.material.forEach(m => { m.side = THREE.FrontSide; });
+                } else {
+                  child.material.side = THREE.FrontSide;
+                }
+              }
+            }
+          });
+          mapGroup.add(model);
+
+          model.traverse((child) => {
+            if (child instanceof THREE.Mesh) {
+              child.updateMatrixWorld(true);
+              const geo = child.geometry;
+              if (!geo.boundingBox) geo.computeBoundingBox();
+              const bb = geo.boundingBox!;
+              const min = bb.min.clone();
+              const max = bb.max.clone();
+
+              const worldMin = min.clone().applyMatrix4(child.matrixWorld);
+              const worldMax = max.clone().applyMatrix4(child.matrixWorld);
+
+              const cx = (worldMin.x + worldMax.x) / 2;
+              const cy = (worldMin.y + worldMax.y) / 2;
+              const cz = (worldMin.z + worldMax.z) / 2;
+              const w = Math.abs(worldMax.x - worldMin.x);
+              const h = Math.abs(worldMax.y - worldMin.y);
+              const d = Math.abs(worldMax.z - worldMin.z);
+
+              if (w > 0.1 && h > 0.1 && d > 0.1) {
+                mapBoxes.push({ x: cx, y: cy, z: cz, w, h, d });
+              }
+            }
+          });
+
+          console.log(`[CS MAP] GLB loaded: ${mapBoxes.length} collision boxes`);
+
+          const groundGeo = new THREE.PlaneGeometry(200, 200);
+          const groundMat = new THREE.MeshLambertMaterial({ color: 0xd2b48c });
+          const ground = new THREE.Mesh(groundGeo, groundMat);
+          ground.rotation.x = -Math.PI / 2;
+          ground.position.y = 0;
+          ground.receiveShadow = true;
+          mapGroup.add(ground);
+
+          resolve();
+        }, undefined, (err) => {
+          console.error('[CS MAP] GLB load error:', err);
+          buildProceduralMap(map);
+          resolve();
+        });
+      });
+    } else {
+      buildProceduralMap(map);
+      return Promise.resolve();
+    }
+  }
+
+  function buildProceduralMap(map: CSMapDef) {
     const groundGeo = new THREE.PlaneGeometry(map.floors[0].w, map.floors[0].d);
     const groundMat = new THREE.MeshLambertMaterial({ color: map.floors[0].color });
     const ground = new THREE.Mesh(groundGeo, groundMat);
