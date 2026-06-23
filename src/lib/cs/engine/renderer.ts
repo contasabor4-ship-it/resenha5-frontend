@@ -219,17 +219,17 @@ export function createCSRenderer(): CSRenderer {
         const loader = new GLTFLoader();
         loader.load(map.glbPath!, (gltf) => {
           const model = gltf.scene;
+          const SCALE = 0.025;
+          const OFFX = 8;
+          const OFFZ = -28;
+          model.scale.setScalar(SCALE);
+          model.position.set(OFFX, 0, OFFZ);
+          model.updateMatrixWorld(true);
+
           model.traverse((child) => {
             if (child instanceof THREE.Mesh) {
               child.castShadow = true;
               child.receiveShadow = true;
-              if (child.material) {
-                if (Array.isArray(child.material)) {
-                  child.material.forEach(m => { m.side = THREE.FrontSide; });
-                } else {
-                  child.material.side = THREE.FrontSide;
-                }
-              }
             }
           });
           mapGroup.add(model);
@@ -240,35 +240,22 @@ export function createCSRenderer(): CSRenderer {
               const geo = child.geometry;
               if (!geo.boundingBox) geo.computeBoundingBox();
               const bb = geo.boundingBox!;
-              const min = bb.min.clone();
-              const max = bb.max.clone();
-
-              const worldMin = min.clone().applyMatrix4(child.matrixWorld);
-              const worldMax = max.clone().applyMatrix4(child.matrixWorld);
-
-              const cx = (worldMin.x + worldMax.x) / 2;
-              const cy = (worldMin.y + worldMax.y) / 2;
-              const cz = (worldMin.z + worldMax.z) / 2;
+              const worldMin = bb.min.clone().applyMatrix4(child.matrixWorld);
+              const worldMax = bb.max.clone().applyMatrix4(child.matrixWorld);
               const w = Math.abs(worldMax.x - worldMin.x);
               const h = Math.abs(worldMax.y - worldMin.y);
               const d = Math.abs(worldMax.z - worldMin.z);
-
-              if (w > 0.1 && h > 0.1 && d > 0.1) {
+              const vol = w * h * d;
+              if (vol > 1 && w > 0.5 && h > 0.5 && d > 0.5) {
+                const cx = (worldMin.x + worldMax.x) / 2;
+                const cy = (worldMin.y + worldMax.y) / 2;
+                const cz = (worldMin.z + worldMax.z) / 2;
                 mapBoxes.push({ x: cx, y: cy, z: cz, w, h, d });
               }
             }
           });
 
           console.log(`[CS MAP] GLB loaded: ${mapBoxes.length} collision boxes`);
-
-          const groundGeo = new THREE.PlaneGeometry(200, 200);
-          const groundMat = new THREE.MeshLambertMaterial({ color: 0xd2b48c });
-          const ground = new THREE.Mesh(groundGeo, groundMat);
-          ground.rotation.x = -Math.PI / 2;
-          ground.position.y = 0;
-          ground.receiveShadow = true;
-          mapGroup.add(ground);
-
           resolve();
         }, undefined, (err) => {
           console.error('[CS MAP] GLB load error:', err);
