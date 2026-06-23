@@ -43,17 +43,17 @@ const WEAPON_GLBS: Record<WeaponType, string> = {
 };
 
 const WEAPON_SCALES: Record<WeaponType, number> = {
-  ak47: 0.012,
-  m4a1: 0.012,
-  deagle: 0.015,
-  knife: 0.02,
+  ak47: 1,
+  m4a1: 1,
+  deagle: 1,
+  knife: 1,
 };
 
 const WEAPON_OFFSETS: Record<WeaponType, { x: number; y: number; z: number }> = {
-  ak47: { x: 0.22, y: -0.22, z: -0.45 },
-  m4a1: { x: 0.22, y: -0.22, z: -0.45 },
-  deagle: { x: 0.18, y: -0.18, z: -0.3 },
-  knife: { x: 0.25, y: -0.25, z: -0.15 },
+  ak47: { x: 0.22, y: -0.22, z: -0.5 },
+  m4a1: { x: 0.22, y: -0.22, z: -0.5 },
+  deagle: { x: 0.18, y: -0.18, z: -0.35 },
+  knife: { x: 0.25, y: -0.25, z: -0.2 },
 };
 
 const WEAPON_ROTATIONS: Record<WeaponType, { x: number; y: number; z: number }> = {
@@ -131,11 +131,18 @@ export function createCSRenderer(): CSRenderer {
       url,
       (gltf) => {
         const model = gltf.scene;
+        const box = new THREE.Box3().setFromObject(model);
+        const center = box.getCenter(new THREE.Vector3());
+        model.position.sub(center);
+
         model.traverse((child) => {
           if ((child as THREE.Mesh).isMesh) {
             const mesh = child as THREE.Mesh;
+            const oldMat = mesh.material as THREE.MeshStandardMaterial;
+            const color = oldMat.color || new THREE.Color(0x888888);
             mesh.material = new THREE.MeshLambertMaterial({
-              color: (mesh.material as THREE.MeshStandardMaterial).color || new THREE.Color(0x888888),
+              color,
+              side: THREE.DoubleSide,
             });
           }
         });
@@ -143,10 +150,11 @@ export function createCSRenderer(): CSRenderer {
         model.scale.setScalar(scale);
         glbCache[url] = model;
         if (currentWeapon === weapon) attachWeaponModel(weapon);
+        console.log(`GLB loaded: ${weapon}`);
       },
       undefined,
-      () => {
-        console.warn(`Failed to load GLB for ${weapon}, using fallback`);
+      (err) => {
+        console.warn(`Failed to load GLB for ${weapon}, using fallback`, err);
         createFallbackWeapon(weapon);
       }
     );
@@ -155,28 +163,34 @@ export function createCSRenderer(): CSRenderer {
   function createFallbackWeapon(weapon: WeaponType): THREE.Group {
     const group = new THREE.Group();
     const bodyMat = new THREE.MeshLambertMaterial({ color: 0x2a2a2a });
-    const accentMat = new THREE.MeshLambertMaterial({ color: 0x4a4a4a });
+    const accentMat = new THREE.MeshLambertMaterial({ color: 0x555555 });
     const woodMat = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
 
     if (weapon === 'knife') {
-      const handle = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.12, 0.04), woodMat);
-      const blade = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.2, 0.03), accentMat);
-      blade.position.y = 0.16;
+      const handle = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.14, 0.04), woodMat);
+      const blade = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.22, 0.03), accentMat);
+      blade.position.y = 0.18;
       group.add(handle, blade);
     } else if (weapon === 'deagle') {
-      const grip = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.08, 0.04), bodyMat);
-      const slide = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.04, 0.14), accentMat);
-      slide.position.set(0, 0.05, -0.05);
-      group.add(grip, slide);
+      const grip = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.1, 0.05), bodyMat);
+      const slide = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.05, 0.18), accentMat);
+      slide.position.set(0, 0.06, -0.06);
+      const sight = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.02, 0.02), accentMat);
+      sight.position.set(0, 0.1, -0.12);
+      group.add(grip, slide, sight);
     } else {
-      const stock = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.06, 0.12), weapon === 'm4a1' ? bodyMat : woodMat);
-      stock.position.set(0, -0.01, 0.08);
-      const body = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.05, 0.18), bodyMat);
-      body.position.set(0, 0.02, -0.02);
-      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.01, 0.16), accentMat);
+      const stock = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.07, 0.14), weapon === 'm4a1' ? bodyMat : woodMat);
+      stock.position.set(0, -0.01, 0.1);
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.06, 0.22), bodyMat);
+      body.position.set(0, 0.02, -0.04);
+      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.015, 0.2), accentMat);
       barrel.rotation.x = Math.PI / 2;
-      barrel.position.set(0, 0.03, -0.18);
-      group.add(stock, body, barrel);
+      barrel.position.set(0, 0.04, -0.22);
+      const mag = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.08, 0.03), bodyMat);
+      mag.position.set(0, -0.04, -0.02);
+      const sight = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.02, 0.03), accentMat);
+      sight.position.set(0, 0.07, -0.08);
+      group.add(stock, body, barrel, mag, sight);
     }
     return group;
   }
@@ -341,15 +355,12 @@ export function createCSRenderer(): CSRenderer {
   }
 
   function renderBullet(bullet: BulletFireEvent) {
-    const ownerId = (camera as any).__ownerId;
-    if (ownerId && bullet.ownerId === ownerId) return;
-
     const def = WEAPONS[bullet.weapon];
     const start = new THREE.Vector3(bullet.x, bullet.y, bullet.z);
     const dir = new THREE.Vector3(bullet.dx, bullet.dy, bullet.dz).normalize();
     const len = Math.min(def.range, 60);
 
-    const tracerGeo = new THREE.CylinderGeometry(0.015, 0.015, len, 4);
+    const tracerGeo = new THREE.CylinderGeometry(0.02, 0.02, len, 4);
     tracerGeo.rotateX(Math.PI / 2);
     const tracerMat = new THREE.MeshBasicMaterial({ color: 0xffff44 });
     const tracer = new THREE.Mesh(tracerGeo, tracerMat);
@@ -358,7 +369,7 @@ export function createCSRenderer(): CSRenderer {
     effectsGroup.add(tracer);
     bulletLines.push(tracer);
 
-    const flashGeo = new THREE.SphereGeometry(0.06, 4, 4);
+    const flashGeo = new THREE.SphereGeometry(0.08, 6, 6);
     const flashMat = new THREE.MeshBasicMaterial({ color: 0xffff88 });
     const flash = new THREE.Mesh(flashGeo, flashMat);
     flash.position.copy(start);
@@ -371,7 +382,7 @@ export function createCSRenderer(): CSRenderer {
       tracerMat.dispose();
       flashGeo.dispose();
       flashMat.dispose();
-    }, 120);
+    }, 150);
 
     while (bulletLines.length > MAX_BULLET_LINES) {
       const old = bulletLines.shift();
