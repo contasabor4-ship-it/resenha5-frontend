@@ -17,6 +17,7 @@ export interface CSNetworkClient {
   onBullet(cb: (data: { id: string; ownerId: string; x: number; y: number; z: number; dx: number; dy: number; dz: number; weapon: WeaponType }) => void): void;
   onKillfeed(cb: (data: { killer: string; victim: string; weapon: WeaponType; headshot: boolean }) => void): void;
   onCountdown(cb: (data: { seconds: number }) => void): void;
+  onHitEffect(cb: (data: { x: number; y: number; z: number; headshot: boolean; damage: number }) => void): void;
   onError(cb: (msg: string) => void): void;
   disconnect(): void;
 }
@@ -86,6 +87,7 @@ export function createCSNetworkClient(): CSNetworkClient {
   function onBullet(cb: (data: { id: string; ownerId: string; x: number; y: number; z: number; dx: number; dy: number; dz: number; weapon: WeaponType }) => void) { on('bullet', cb); }
   function onKillfeed(cb: (data: { killer: string; victim: string; weapon: WeaponType; headshot: boolean }) => void) { on('killfeed', cb); }
   function onCountdown(cb: (data: { seconds: number }) => void) { on('countdown', cb); }
+  function onHitEffect(cb: (data: { x: number; y: number; z: number; headshot: boolean; damage: number }) => void) { on('hit_effect', cb); }
   function onError(cb: (msg: string) => void) { on('error_msg', cb); }
 
   function disconnect() {
@@ -98,6 +100,6 @@ export function createCSNetworkClient(): CSNetworkClient {
     connect, joinMatch, leaveMatch, sendState, shoot,
     onMatchJoined, onPlayersUpdate, onGameState,
     onPlayerDied, onRoundEnd, onMatchEnd, onBullet, onKillfeed,
-    onCountdown, onError, disconnect,
+    onCountdown, onHitEffect, onError, disconnect,
   };
 }

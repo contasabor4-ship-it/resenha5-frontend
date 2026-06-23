@@ -18,15 +18,21 @@ export interface CSRenderer {
   addBulletHole(hole: BulletHole): void;
   renderBullet(bullet: BulletFireEvent): void;
   renderMuzzleFlash(x: number, y: number, z: number): void;
+  renderHitSpark(x: number, y: number, z: number): void;
+  renderWallImpact(x: number, y: number, z: number): void;
   setRecoil(amount: number): void;
   updateCamera(pos: { x: number; y: number; z: number }, yaw: number, pitch: number, crouching: boolean): void;
   resize(): void;
   dispose(): void;
   switchWeapon(weapon: WeaponType): void;
+  updateParticles(dt: number): void;
+  showHitMarker(): void;
+  getHitMarkerAlpha(): number;
 }
 
 const MAX_BULLET_HOLES = 100;
 const MAX_BULLET_LINES = 20;
+const MAX_PARTICLES = 80;
 
 export function createCSRenderer(): CSRenderer {
   let scene: THREE.Scene;
@@ -37,7 +43,8 @@ export function createCSRenderer(): CSRenderer {
   let effectsGroup: THREE.Group;
   let crosshair: HTMLDivElement;
   let bulletHoles: THREE.Mesh[] = [];
-  let bulletLines: THREE.Line[] = [];
+  let bulletLines: THREE.Object3D[] = [];
+  let particles: THREE.Object3D[] = [];
   let recoilOffset = 0;
   let muzzleFlash: THREE.PointLight | null = null;
   let mapBoxes: Array<{ x: number; y: number; z: number; w: number; h: number; d: number }> = [];
@@ -45,6 +52,7 @@ export function createCSRenderer(): CSRenderer {
   let weaponModel: THREE.Group;
   let gunBobPhase = 0;
   let gunBobAmount = 0;
+  let hitMarkerAlpha = 0;
 
   function init(c: HTMLElement) {
     container = c;
@@ -77,15 +85,6 @@ export function createCSRenderer(): CSRenderer {
 
     crosshair = document.createElement('div');
     crosshair.style.cssText = 'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:100;';
-    crosshair.innerHTML = `
-      <svg width="24" height="24" viewBox="0 0 24 24">
-        <line x1="12" y1="4" x2="12" y2="10" stroke="#0f0" stroke-width="1.5" opacity="0.9"/>
-        <line x1="12" y1="14" x2="12" y2="20" stroke="#0f0" stroke-width="1.5" opacity="0.9"/>
-        <line x1="4" y1="12" x2="10" y2="12" stroke="#0f0" stroke-width="1.5" opacity="0.9"/>
-        <line x1="14" y1="12" x2="20" y2="12" stroke="#0f0" stroke-width="1.5" opacity="0.9"/>
-        <circle cx="12" cy="12" r="2" fill="none" stroke="#0f0" stroke-width="0.8" opacity="0.6"/>
-      </svg>
-    `;
     c.style.position = 'relative';
     c.appendChild(crosshair);
   }
@@ -185,12 +184,15 @@ export function createCSRenderer(): CSRenderer {
   }
 
   function renderEnemies(enemies: CSPlayerState[], localTeam: string) {
-    while (enemiesGroup.children.length) enemiesGroup.remove(enemiesGroup.children[0]);
+    while (enemiesGroup.children.length) {
+      const child = enemiesGroup.children[0];
+      enemiesGroup.remove(child);
+    }
 
     for (const e of enemies) {
       if (!e.isAlive) continue;
 
-      const bodyColor = e.team === 'CT' ? 0x2244aa : 0xaa4422;
+      const bodyColor = e.team === localTeam ? 0x2244aa : 0xaa4422;
       const group = new THREE.Group();
 
       const torso = new THREE.Mesh(
@@ -266,39 +268,99 @@ export function createCSRenderer(): CSRenderer {
   function renderBullet(bullet: BulletFireEvent) {
     const def = WEAPONS[bullet.weapon];
     const start = new THREE.Vector3(bullet.x, bullet.y, bullet.z);
-    const dir = new THREE.Vector3(bullet.dx, bullet.dy, bullet.dz);
-    const len = Math.min(def.range, 120);
-    const end = start.clone().add(dir.clone().multiplyScalar(len));
+    const dir = new THREE.Vector3(bullet.dx, bullet.dy, bullet.dz).normalize();
+    const len = Math.min(def.range, 60);
 
-    const points = [start, end];
-    const geo = new THREE.BufferGeometry().setFromPoints(points);
-    const mat = new THREE.LineBasicMaterial({ color: 0xffff00, linewidth: 2 });
-    const line = new THREE.Line(geo, mat);
-    effectsGroup.add(line);
-    bulletLines.push(line);
+    const tracerGeo = new THREE.CylinderGeometry(0.015, 0.015, len, 4);
+    tracerGeo.rotateX(Math.PI / 2);
+    const tracerMat = new THREE.MeshBasicMaterial({ color: 0xffff44 });
+    const tracer = new THREE.Mesh(tracerGeo, tracerMat);
+    tracer.position.copy(start).add(dir.clone().multiplyScalar(len / 2));
+    tracer.lookAt(start.clone().add(dir));
+    effectsGroup.add(tracer);
+    bulletLines.push(tracer);
 
-    const flashGeo = new THREE.SphereGeometry(0.08, 4, 4);
-    const flashMat = new THREE.MeshBasicMaterial({ color: 0xffff44 });
+    const flashGeo = new THREE.SphereGeometry(0.06, 4, 4);
+    const flashMat = new THREE.MeshBasicMaterial({ color: 0xffff88 });
     const flash = new THREE.Mesh(flashGeo, flashMat);
     flash.position.copy(start);
     effectsGroup.add(flash);
 
     setTimeout(() => {
-      effectsGroup.remove(line);
+      effectsGroup.remove(tracer);
       effectsGroup.remove(flash);
-      geo.dispose();
-      mat.dispose();
+      tracerGeo.dispose();
+      tracerMat.dispose();
       flashGeo.dispose();
       flashMat.dispose();
-    }, 100);
+    }, 120);
 
     while (bulletLines.length > MAX_BULLET_LINES) {
       const old = bulletLines.shift();
       if (old) {
         effectsGroup.remove(old);
-        old.geometry.dispose();
-        (old.material as THREE.Material).dispose();
       }
+    }
+  }
+
+  function renderHitSpark(x: number, y: number, z: number) {
+    for (let i = 0; i < 10; i++) {
+      const geo = new THREE.SphereGeometry(0.03 + Math.random() * 0.03, 4, 4);
+      const mat = new THREE.MeshBasicMaterial({ color: i < 6 ? 0xff4444 : 0xff8800 });
+      const spark = new THREE.Mesh(geo, mat);
+      spark.position.set(x, y, z);
+      const vx = (Math.random() - 0.5) * 4;
+      const vy = Math.random() * 3 + 1;
+      const vz = (Math.random() - 0.5) * 4;
+      (spark as any)._vx = vx;
+      (spark as any)._vy = vy;
+      (spark as any)._vz = vz;
+      (spark as any)._life = 0.4;
+      (spark as any)._startTime = performance.now();
+      effectsGroup.add(spark);
+      particles.push(spark);
+    }
+  }
+
+  function renderWallImpact(x: number, y: number, z: number) {
+    for (let i = 0; i < 6; i++) {
+      const geo = new THREE.SphereGeometry(0.02 + Math.random() * 0.02, 4, 4);
+      const mat = new THREE.MeshBasicMaterial({ color: 0x888877 });
+      const spark = new THREE.Mesh(geo, mat);
+      spark.position.set(x, y, z);
+      const vx = (Math.random() - 0.5) * 3;
+      const vy = Math.random() * 2;
+      const vz = (Math.random() - 0.5) * 3;
+      (spark as any)._vx = vx;
+      (spark as any)._vy = vy;
+      (spark as any)._vz = vz;
+      (spark as any)._life = 0.3;
+      (spark as any)._startTime = performance.now();
+      effectsGroup.add(spark);
+      particles.push(spark);
+    }
+  }
+
+  function updateParticles(dt: number) {
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      const elapsed = (performance.now() - (p as any)._startTime) / 1000;
+      const life = (p as any)._life;
+      if (elapsed >= life) {
+        effectsGroup.remove(p);
+        particles.splice(i, 1);
+        continue;
+      }
+      (p as any)._vy -= 12 * dt;
+      p.position.x += (p as any)._vx * dt;
+      p.position.y += (p as any)._vy * dt;
+      p.position.z += (p as any)._vz * dt;
+      const scale = 1 - elapsed / life;
+      p.scale.setScalar(scale);
+    }
+    while (particles.length > MAX_PARTICLES) {
+      const old = particles.shift();
+      if (old) effectsGroup.remove(old);
     }
   }
 
@@ -321,6 +383,16 @@ export function createCSRenderer(): CSRenderer {
 
   function setRecoil(amount: number) {
     recoilOffset = amount;
+  }
+
+  function getHitMarkerAlpha() {
+    const v = hitMarkerAlpha;
+    hitMarkerAlpha *= 0.85;
+    return v;
+  }
+
+  function showHitMarker() {
+    hitMarkerAlpha = 1;
   }
 
   function updateCamera(pos: { x: number; y: number; z: number }, yaw: number, pitch: number, crouching: boolean) {
@@ -360,7 +432,8 @@ export function createCSRenderer(): CSRenderer {
     get effectsGroup() { return effectsGroup; },
     get crosshair() { return crosshair; },
     init, buildMap, renderMap, getMapBoxes, renderEnemies, addBulletHole,
-    renderBullet, renderMuzzleFlash, setRecoil, updateCamera, resize, dispose,
-    switchWeapon,
+    renderBullet, renderMuzzleFlash, renderHitSpark, renderWallImpact,
+    setRecoil, updateCamera, resize, dispose,
+    switchWeapon, updateParticles, showHitMarker, getHitMarkerAlpha,
   };
 }

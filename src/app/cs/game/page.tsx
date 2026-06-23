@@ -11,6 +11,13 @@ import { createEnemyManager } from '../../../lib/cs/engine/enemies';
 
 const CS_SERVER_URL = process.env.NEXT_PUBLIC_CS_SERVER_URL || process.env.NEXT_PUBLIC_GAME_SERVER_URL || '';
 
+const WEAPON_ICONS: Record<string, string> = {
+  ak47: 'AK-47',
+  m4a1: 'M4A1',
+  deagle: 'DEAGLE',
+  knife: 'FACA',
+};
+
 export default function CSGamePage() {
   const router = useRouter();
   const [nickname, setNickname] = useState('');
@@ -29,6 +36,9 @@ export default function CSGamePage() {
   const [isAlive, setIsAlive] = useState(true);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [pointerLocked, setPointerLocked] = useState(false);
+  const [hitMarker, setHitMarker] = useState(false);
+  const [reloading, setReloading] = useState(false);
+  const [reloadProgress, setReloadProgress] = useState(0);
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<any>(null);
@@ -41,6 +51,7 @@ export default function CSGamePage() {
   const plLockedRef = useRef(false);
   const gameRunningRef = useRef(false);
   const lastShotRef = useRef(0);
+  const hitMarkerTimeoutRef = useRef<any>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem('r5_nickname');
@@ -110,7 +121,7 @@ export default function CSGamePage() {
         const me = players.find((p: any) => p.id === myId);
         if (me) {
           setIsAlive(me.isAlive);
-          if (me.isAlive) { setHealth(me.health); setAmmo(me.ammo); setWeapon(me.weapon); setArmor(me.armor); }
+          if (me.isAlive) { setHealth(me.health); setWeapon(me.weapon); setArmor(me.armor); }
         }
       });
 
@@ -125,6 +136,14 @@ export default function CSGamePage() {
       });
 
       net.onBullet((data: any) => rendererRef.current?.renderBullet(data));
+
+      net.onHitEffect((data: any) => {
+        rendererRef.current?.renderHitSpark(data.x, data.y, data.z);
+        setHitMarker(true);
+        if (hitMarkerTimeoutRef.current) clearTimeout(hitMarkerTimeoutRef.current);
+        hitMarkerTimeoutRef.current = setTimeout(() => setHitMarker(false), 150);
+      });
+
       net.onKillfeed((data: any) => setKillfeed(prev => [data, ...prev].slice(0, 5)));
       net.onPlayerDied((data: any) => { if (data.victimId === net.socket?.id) setIsAlive(false); });
 
@@ -175,6 +194,14 @@ export default function CSGamePage() {
           case 'Digit1': i.weapon = 'knife'; break;
           case 'Digit2': i.weapon = selectedTeam === 'CT' ? 'm4a1' : 'ak47'; break;
           case 'Digit3': i.weapon = 'deagle'; break;
+          case 'KeyR':
+            if (lp.ammo < WEAPONS[lp.weapon as WeaponType].ammo && lp.weapon !== 'knife' && !lp.reloading) {
+              lp.reloading = true;
+              lp.reloadStartTime = performance.now();
+              setReloading(true);
+              setReloadProgress(0);
+            }
+            break;
         }
       };
 
@@ -223,9 +250,23 @@ export default function CSGamePage() {
       setAmmo(lp.ammo);
       setArmor(lp.armor);
 
+      if (lp.reloading) {
+        const def = WEAPONS[lp.weapon as WeaponType];
+        const elapsed = now - lp.reloadStartTime;
+        const progress = Math.min(elapsed / def.reloadTime, 1);
+        setReloadProgress(progress);
+        if (elapsed >= def.reloadTime) {
+          lp.reloading = false;
+          lp.ammo = def.ammo;
+          setReloading(false);
+          setReloadProgress(0);
+          setAmmo(def.ammo);
+        }
+      }
+
       if (inputRef.current.shooting && lp.weapon !== 'knife') {
         const def = WEAPONS[lp.weapon as WeaponType];
-        if (now - lastShotRef.current >= def.fireRate && lp.ammo > 0) {
+        if (now - lastShotRef.current >= def.fireRate && lp.ammo > 0 && !lp.reloading) {
           lastShotRef.current = now;
           lp.ammo--;
 
@@ -271,6 +312,7 @@ export default function CSGamePage() {
       recoilRef.current *= 0.88;
       r.updateCamera(lp.position, lp.yaw, lp.pitch + recoilRef.current, inputRef.current.crouch);
       r.renderEnemies(enemiesRef.current.enemies, lp.team || 'CT');
+      r.updateParticles(1 / 60);
     }
 
     if (now - lastSendRef.current > 50 && lp) {
@@ -288,9 +330,16 @@ export default function CSGamePage() {
 
   if (!nickname) return null;
 
+  const weaponDef = WEAPONS[weapon];
+  const maxAmmo = weaponDef.ammo;
+
   return (
     <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', background: '#000', position: 'relative', fontFamily: 'monospace' }}>
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes hitFlash { 0% { opacity: 1; } 100% { opacity: 0; } }
+        @keyframes reloadPulse { 0%,100% { opacity: 0.7; } 50% { opacity: 1; } }
+      `}</style>
 
       {status === 'team_select' && (
         <div style={{
@@ -298,7 +347,7 @@ export default function CSGamePage() {
           background: 'linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #0a0a0a 100%)', zIndex: 30,
         }}>
           <div style={{ textAlign: 'center', color: '#fff' }}>
-            <h1 style={{ fontSize: 42, fontWeight: 900, color: '#ff6b6b', marginBottom: 8 }}>CS RESENHA</h1>
+            <h1 style={{ fontSize: 42, fontWeight: 900, color: '#ff6b6b', marginBottom: 8, textShadow: '0 0 20px rgba(255,107,107,0.5)' }}>CS RESENHA</h1>
             <p style={{ color: '#888', marginBottom: 32, fontSize: 14 }}>Escolha seu time</p>
             {ctScore > 0 || tScore > 0 ? (
               <div style={{ display: 'flex', gap: 20, justifyContent: 'center', marginBottom: 24 }}>
@@ -308,8 +357,8 @@ export default function CSGamePage() {
               </div>
             ) : null}
             <div style={{ display: 'flex', gap: 16, justifyContent: 'center' }}>
-              <button onClick={() => startGame('CT')} style={{ padding: '20px 48px', borderRadius: 12, border: '2px solid #4488ff', background: 'rgba(68,136,255,0.15)', color: '#4488ff', cursor: 'pointer', fontWeight: 'bold', fontSize: 20 }}>CT<div style={{ fontSize: 11, color: '#666', marginTop: 6 }}>M4A1</div></button>
-              <button onClick={() => startGame('T')} style={{ padding: '20px 48px', borderRadius: 12, border: '2px solid #ff6b35', background: 'rgba(255,107,53,0.15)', color: '#ff6b35', cursor: 'pointer', fontWeight: 'bold', fontSize: 20 }}>T<div style={{ fontSize: 11, color: '#666', marginTop: 6 }}>AK-47</div></button>
+              <button onClick={() => startGame('CT')} style={{ padding: '20px 48px', borderRadius: 12, border: '2px solid #4488ff', background: 'rgba(68,136,255,0.15)', color: '#4488ff', cursor: 'pointer', fontWeight: 'bold', fontSize: 20, transition: 'all 0.2s' }}>CT<div style={{ fontSize: 11, color: '#666', marginTop: 6 }}>M4A1</div></button>
+              <button onClick={() => startGame('T')} style={{ padding: '20px 48px', borderRadius: 12, border: '2px solid #ff6b35', background: 'rgba(255,107,53,0.15)', color: '#ff6b35', cursor: 'pointer', fontWeight: 'bold', fontSize: 20, transition: 'all 0.2s' }}>T<div style={{ fontSize: 11, color: '#666', marginTop: 6 }}>AK-47</div></button>
             </div>
             <p style={{ color: '#555', marginTop: 24, fontSize: 12 }}>{nickname}</p>
             <button onClick={() => router.push('/')} style={{ marginTop: 16, padding: '8px 20px', background: '#333', color: '#aaa', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 12 }}>Voltar ao Hub</button>
@@ -325,71 +374,139 @@ export default function CSGamePage() {
         </div>
       )}
 
-      <div style={{ position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center', gap: 16, background: 'rgba(0,0,0,0.6)', padding: '6px 20px', borderRadius: 8, zIndex: 10, pointerEvents: 'none' }}>
-        <div style={{ color: '#4488ff', fontWeight: 'bold', fontSize: 20 }}>{ctScore}</div>
-        <div style={{ color: '#666', fontSize: 12, textAlign: 'center' }}>
-          <div>Round {round}/{maxRounds}</div>
-          <div style={{ fontSize: 16, color: '#fff', fontWeight: 'bold' }}>{timeLeft}s</div>
+      {/* === TOP SCOREBOARD === */}
+      <div style={{ position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'stretch', background: 'rgba(0,0,0,0.75)', borderRadius: '0 0 12px 12px', overflow: 'hidden', zIndex: 10, pointerEvents: 'none' }}>
+        <div style={{ padding: '8px 24px', background: 'rgba(68,136,255,0.3)', textAlign: 'center', minWidth: 70 }}>
+          <div style={{ color: '#4488ff', fontSize: 28, fontWeight: 900, lineHeight: 1 }}>{ctScore}</div>
+          <div style={{ color: '#4488ff', fontSize: 10, fontWeight: 'bold', letterSpacing: 1 }}>CT</div>
         </div>
-        <div style={{ color: '#ff6b35', fontWeight: 'bold', fontSize: 20 }}>{tScore}</div>
+        <div style={{ padding: '8px 16px', textAlign: 'center', display: 'flex', flexDirection: 'column', justifyContent: 'center', minWidth: 100 }}>
+          <div style={{ color: '#aaa', fontSize: 10, letterSpacing: 1 }}>ROUND {round}/{maxRounds}</div>
+          <div style={{ color: '#fff', fontSize: 22, fontWeight: 'bold', lineHeight: 1.2 }}>{timeLeft}s</div>
+        </div>
+        <div style={{ padding: '8px 24px', background: 'rgba(255,107,53,0.3)', textAlign: 'center', minWidth: 70 }}>
+          <div style={{ color: '#ff6b35', fontSize: 28, fontWeight: 900, lineHeight: 1 }}>{tScore}</div>
+          <div style={{ color: '#ff6b35', fontSize: 10, fontWeight: 'bold', letterSpacing: 1 }}>T</div>
+        </div>
       </div>
 
-      <div style={{ position: 'absolute', top: 60, right: 12, display: 'flex', flexDirection: 'column', gap: 4, maxWidth: 280, zIndex: 10, pointerEvents: 'none' }}>
+      {/* === KILL FEED === */}
+      <div style={{ position: 'absolute', top: 70, right: 12, display: 'flex', flexDirection: 'column', gap: 3, maxWidth: 300, zIndex: 10, pointerEvents: 'none' }}>
         {killfeed.slice(0, 5).map((k, i) => (
-          <div key={i} style={{ background: 'rgba(0,0,0,0.5)', padding: '3px 8px', borderRadius: 4, fontSize: 11, color: '#ccc', whiteSpace: 'nowrap' }}>
-            <span style={{ color: '#ff6b6b' }}>{k.killer}</span>
-            <span style={{ color: '#888' }}> [{k.weapon}{k.headshot ? ' HS' : ''}] </span>
-            <span style={{ color: '#4488ff' }}>{k.victim}</span>
+          <div key={i} style={{ background: 'rgba(0,0,0,0.6)', padding: '3px 10px', borderRadius: 4, fontSize: 11, color: '#ccc', whiteSpace: 'nowrap', animation: 'hitFlash 0.3s ease-out' }}>
+            <span style={{ color: '#ff6b6b', fontWeight: 'bold' }}>{k.killer}</span>
+            <span style={{ color: '#888', margin: '0 4px' }}>[{WEAPON_ICONS[k.weapon] || k.weapon}{k.headshot ? ' HS' : ''}]</span>
+            <span style={{ color: '#4488ff', fontWeight: 'bold' }}>{k.victim}</span>
           </div>
         ))}
       </div>
 
-      <div style={{ position: 'absolute', bottom: 16, left: 16, zIndex: 10, pointerEvents: 'none' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ color: '#ff4444', fontSize: 24 }}>♥</span>
-          <span style={{ color: health > 50 ? '#0f0' : health > 25 ? '#ff0' : '#f00', fontSize: 24, fontWeight: 'bold' }}>{health}</span>
-        </div>
-        {armor > 0 && <div style={{ color: '#4488ff', fontSize: 14, marginTop: 2 }}>🛡 {armor}</div>}
-      </div>
-
-      <div style={{ position: 'absolute', bottom: 16, right: 16, textAlign: 'right', zIndex: 10, pointerEvents: 'none' }}>
-        <div style={{ color: '#fff', fontSize: 28, fontWeight: 'bold' }}>{weapon === 'knife' ? '∞' : ammo}</div>
-        <div style={{ color: '#888', fontSize: 12 }}>{WEAPONS[weapon].name}</div>
-      </div>
-
-      {status === 'playing' && isAlive && (
-        <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 10, pointerEvents: 'none' }}>
-          <svg width="24" height="24" viewBox="0 0 24 24">
-            <line x1="12" y1="4" x2="12" y2="10" stroke="#0f0" strokeWidth="1.5" opacity="0.9"/>
-            <line x1="12" y1="14" x2="12" y2="20" stroke="#0f0" strokeWidth="1.5" opacity="0.9"/>
-            <line x1="4" y1="12" x2="10" y2="12" stroke="#0f0" strokeWidth="1.5" opacity="0.9"/>
-            <line x1="14" y1="12" x2="20" y2="12" stroke="#0f0" strokeWidth="1.5" opacity="0.9"/>
-            <circle cx="12" cy="12" r="2" fill="none" stroke="#0f0" strokeWidth="0.8" opacity="0.6"/>
+      {/* === CROSSHIT HIT MARKER === */}
+      {hitMarker && (
+        <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 15, pointerEvents: 'none' }}>
+          <svg width="32" height="32" viewBox="0 0 32 32">
+            <line x1="10" y1="10" x2="14" y2="14" stroke="#ff4444" strokeWidth="2.5" />
+            <line x1="22" y1="10" x2="18" y2="14" stroke="#ff4444" strokeWidth="2.5" />
+            <line x1="10" y1="22" x2="14" y2="18" stroke="#ff4444" strokeWidth="2.5" />
+            <line x1="22" y1="22" x2="18" y2="18" stroke="#ff4444" strokeWidth="2.5" />
           </svg>
         </div>
       )}
 
+      {/* === CROSSHAIR === */}
+      {status === 'playing' && isAlive && !hitMarker && (
+        <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 10, pointerEvents: 'none' }}>
+          <svg width="24" height="24" viewBox="0 0 24 24">
+            <line x1="12" y1="4" x2="12" y2="10" stroke="#0f0" strokeWidth="1.5" opacity="0.8"/>
+            <line x1="12" y1="14" x2="12" y2="20" stroke="#0f0" strokeWidth="1.5" opacity="0.8"/>
+            <line x1="4" y1="12" x2="10" y2="12" stroke="#0f0" strokeWidth="1.5" opacity="0.8"/>
+            <line x1="14" y1="12" x2="20" y2="12" stroke="#0f0" strokeWidth="1.5" opacity="0.8"/>
+            <circle cx="12" cy="12" r="2" fill="none" stroke="#0f0" strokeWidth="0.8" opacity="0.5"/>
+          </svg>
+        </div>
+      )}
+
+      {/* === BOTTOM HUD === */}
+      {status === 'playing' && isAlive && (
+        <>
+          {/* Health + Armor - Bottom Left */}
+          <div style={{ position: 'absolute', bottom: 16, left: 16, zIndex: 10, pointerEvents: 'none' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+              <span style={{ color: '#ff4444', fontSize: 20 }}>+</span>
+              <div style={{ width: 120, height: 14, background: 'rgba(0,0,0,0.6)', borderRadius: 3, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)' }}>
+                <div style={{ width: `${health}%`, height: '100%', background: health > 50 ? 'linear-gradient(90deg, #0a0, #0f0)' : health > 25 ? 'linear-gradient(90deg, #aa0, #ff0)' : 'linear-gradient(90deg, #a00, #f00)', transition: 'width 0.1s' }} />
+              </div>
+              <span style={{ color: health > 50 ? '#0f0' : health > 25 ? '#ff0' : '#f00', fontSize: 16, fontWeight: 'bold', minWidth: 28, textAlign: 'right' }}>{health}</span>
+            </div>
+            {armor > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ color: '#4488ff', fontSize: 16 }}>&#9650;</span>
+                <div style={{ width: 120, height: 10, background: 'rgba(0,0,0,0.6)', borderRadius: 3, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)' }}>
+                  <div style={{ width: `${armor}%`, height: '100%', background: 'linear-gradient(90deg, #226, #48f)', transition: 'width 0.1s' }} />
+                </div>
+                <span style={{ color: '#4488ff', fontSize: 13, fontWeight: 'bold', minWidth: 28, textAlign: 'right' }}>{armor}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Weapon + Ammo - Bottom Right */}
+          <div style={{ position: 'absolute', bottom: 16, right: 16, textAlign: 'right', zIndex: 10, pointerEvents: 'none' }}>
+            {reloading && (
+              <div style={{ marginBottom: 4, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
+                <span style={{ color: '#ff0', fontSize: 11, animation: 'reloadPulse 1s infinite' }}>RECARREGANDO</span>
+                <div style={{ width: 80, height: 6, background: 'rgba(0,0,0,0.6)', borderRadius: 3, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)' }}>
+                  <div style={{ width: `${reloadProgress * 100}%`, height: '100%', background: '#ff0', transition: 'width 0.05s' }} />
+                </div>
+              </div>
+            )}
+            <div style={{ color: '#fff', fontSize: 36, fontWeight: 900, lineHeight: 1, textShadow: '0 2px 8px rgba(0,0,0,0.5)' }}>
+              {weapon === 'knife' ? (
+                <span style={{ color: '#aaa' }}>&infin;</span>
+              ) : (
+                <>
+                  <span style={{ color: ammo <= 5 ? '#f00' : '#fff' }}>{ammo}</span>
+                  <span style={{ color: '#666', fontSize: 20, margin: '0 2px' }}>/</span>
+                  <span style={{ color: '#888', fontSize: 20 }}>{maxAmmo}</span>
+                </>
+              )}
+            </div>
+            <div style={{ color: '#aaa', fontSize: 12, fontWeight: 'bold', letterSpacing: 1, marginTop: 2 }}>{WEAPON_ICONS[weapon] || weapon}</div>
+            {ammo === 0 && weapon !== 'knife' && !reloading && (
+              <div style={{ color: '#ff0', fontSize: 11, marginTop: 4, animation: 'reloadPulse 1s infinite' }}>Pressione R para recarregar</div>
+            )}
+          </div>
+
+          {/* Controls hint */}
+          <div style={{ position: 'absolute', bottom: 80, left: '50%', transform: 'translateX(-50%)', zIndex: 10, pointerEvents: 'none', textAlign: 'center' }}>
+            <span style={{ color: '#555', fontSize: 10, letterSpacing: 0.5 }}>WASD Mover | Shift Correr | Ctrl Agachar | 1/2/3 Armas | R Recarregar</span>
+          </div>
+        </>
+      )}
+
+      {/* === CLICK TO PLAY OVERLAY === */}
       {status === 'playing' && !pointerLocked && isAlive && (
         <div onClick={handleClick} style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.4)', zIndex: 20, cursor: 'pointer' }}>
           <div style={{ textAlign: 'center', color: '#fff' }}>
-            <p style={{ fontSize: 20, fontWeight: 'bold' }}>Clique para jogar</p>
-            <p style={{ fontSize: 12, color: '#888', marginTop: 8 }}>WASD + Mouse | 1/2/3 Armas | Shift Correr | Ctrl Agachar</p>
+            <p style={{ fontSize: 24, fontWeight: 'bold' }}>Clique para jogar</p>
+            <p style={{ fontSize: 12, color: '#888', marginTop: 8 }}>WASD + Mouse | 1/2/3 Armas | R Recarregar</p>
           </div>
         </div>
       )}
 
+      {/* === DEATH SCREEN === */}
       {!isAlive && status === 'playing' && (
         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(180,0,0,0.3)', zIndex: 20, pointerEvents: 'none' }}>
           <div style={{ textAlign: 'center', color: '#fff' }}>
-            <p style={{ fontSize: 28, fontWeight: 'bold', color: '#ff4444' }}>ELIMINADO</p>
+            <p style={{ fontSize: 32, fontWeight: 'bold', color: '#ff4444', textShadow: '0 0 20px rgba(255,0,0,0.5)' }}>ELIMINADO</p>
             <p style={{ fontSize: 14, color: '#aaa', marginTop: 8 }}>Aguardando proximo round...</p>
           </div>
         </div>
       )}
 
+      {/* === COUNTDOWN === */}
       {countdown !== null && countdown > 0 && (
         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)', zIndex: 25, pointerEvents: 'none' }}>
-          <div style={{ fontSize: 64, fontWeight: 'bold', color: '#fff' }}>{countdown}</div>
+          <div style={{ fontSize: 72, fontWeight: 'bold', color: '#fff', textShadow: '0 0 30px rgba(255,255,255,0.5)' }}>{countdown}</div>
         </div>
       )}
 
