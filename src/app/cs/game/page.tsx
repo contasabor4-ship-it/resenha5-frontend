@@ -314,7 +314,7 @@ export default function CSGamePage() {
     }
   }, [nickname]);
 
-  let debugFrameCount = 0;
+  const debugFrameCountRef = useRef(0);
 
   function gameLoop() {
     if (!gameRunningRef.current) return;
@@ -332,8 +332,8 @@ export default function CSGamePage() {
       return;
     }
 
-    debugFrameCount++;
-    if (debugFrameCount % 120 === 0) {
+    debugFrameCountRef.current++;
+    if (debugFrameCountRef.current % 120 === 0) {
       console.log('[CS DEBUG] alive=' + lp.alive + ' pos=' + JSON.stringify(lp.position) +
         ' input: F=' + inputRef.current.forward + ' B=' + inputRef.current.backward +
         ' L=' + inputRef.current.left + ' R=' + inputRef.current.right +
