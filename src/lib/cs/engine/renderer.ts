@@ -43,17 +43,17 @@ const WEAPON_GLBS: Record<WeaponType, string> = {
 };
 
 const WEAPON_SCALES: Record<WeaponType, number> = {
-  ak47: 0.35,
-  m4a1: 0.35,
-  deagle: 0.3,
-  knife: 0.25,
+  ak47: 1,
+  m4a1: 1,
+  deagle: 1,
+  knife: 1,
 };
 
 const WEAPON_OFFSETS: Record<WeaponType, { x: number; y: number; z: number }> = {
-  ak47: { x: 0.22, y: -0.25, z: -0.5 },
-  m4a1: { x: 0.22, y: -0.25, z: -0.5 },
-  deagle: { x: 0.18, y: -0.22, z: -0.35 },
-  knife: { x: 0.25, y: -0.3, z: -0.2 },
+  ak47: { x: 0.3, y: -0.35, z: -0.6 },
+  m4a1: { x: 0.3, y: -0.35, z: -0.6 },
+  deagle: { x: 0.25, y: -0.3, z: -0.45 },
+  knife: { x: 0.3, y: -0.35, z: -0.3 },
 };
 
 const WEAPON_ROTATIONS: Record<WeaponType, { x: number; y: number; z: number }> = {
@@ -104,6 +104,9 @@ export function createCSRenderer(): CSRenderer {
     const dirLight = new THREE.DirectionalLight(0xfff5e1, 0.9);
     dirLight.position.set(30, 50, 20);
     scene.add(dirLight);
+    const weaponLight = new THREE.PointLight(0xffffff, 1.5, 5);
+    weaponLight.position.set(0, 0.3, -0.5);
+    camera.add(weaponLight);
 
     mapGroup = new THREE.Group();
     scene.add(mapGroup);
@@ -131,9 +134,6 @@ export function createCSRenderer(): CSRenderer {
       url,
       (gltf) => {
         const model = gltf.scene;
-        const box = new THREE.Box3().setFromObject(model);
-        const center = box.getCenter(new THREE.Vector3());
-        model.position.sub(center);
 
         model.traverse((child) => {
           if ((child as THREE.Mesh).isMesh) {
@@ -142,20 +142,28 @@ export function createCSRenderer(): CSRenderer {
             const color = oldMat.color || new THREE.Color(0x888888);
             mesh.material = new THREE.MeshLambertMaterial({
               color,
-              side: THREE.DoubleSide,
             });
           }
         });
-        const scale = WEAPON_SCALES[weapon];
-        model.scale.setScalar(scale);
+
+        const box = new THREE.Box3().setFromObject(model);
+        const size = box.getSize(new THREE.Vector3());
+        const targetLen = weapon === 'knife' ? 0.4 : weapon === 'deagle' ? 0.35 : 0.7;
+        const maxDim = Math.max(size.x, size.y, size.z);
+        const autoScale = maxDim > 0 ? targetLen / maxDim : 1;
+        model.scale.setScalar(autoScale);
+
+        const centeredBox = new THREE.Box3().setFromObject(model);
+        const centeredCenter = centeredBox.getCenter(new THREE.Vector3());
+        model.position.sub(centeredCenter);
+
         glbCache[url] = model;
         if (currentWeapon === weapon) attachWeaponModel(weapon);
-        console.log(`GLB loaded: ${weapon}`);
+        console.log(`GLB loaded: ${weapon}, autoScale: ${autoScale.toFixed(3)}, size: ${size.x.toFixed(2)}x${size.y.toFixed(2)}x${size.z.toFixed(2)}`);
       },
       undefined,
       (err) => {
         console.warn(`Failed to load GLB for ${weapon}, using fallback`, err);
-        createFallbackWeapon(weapon);
       }
     );
   }
@@ -167,30 +175,36 @@ export function createCSRenderer(): CSRenderer {
     const woodMat = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
 
     if (weapon === 'knife') {
-      const handle = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.14, 0.04), woodMat);
-      const blade = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.22, 0.03), accentMat);
-      blade.position.y = 0.18;
+      const handle = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.16, 0.05), woodMat);
+      const blade = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.28, 0.035), accentMat);
+      blade.position.y = 0.22;
       group.add(handle, blade);
     } else if (weapon === 'deagle') {
-      const grip = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.1, 0.05), bodyMat);
-      const slide = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.05, 0.18), accentMat);
-      slide.position.set(0, 0.06, -0.06);
-      const sight = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.02, 0.02), accentMat);
-      sight.position.set(0, 0.1, -0.12);
-      group.add(grip, slide, sight);
-    } else {
-      const stock = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.07, 0.14), weapon === 'm4a1' ? bodyMat : woodMat);
-      stock.position.set(0, -0.01, 0.1);
-      const body = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.06, 0.22), bodyMat);
-      body.position.set(0, 0.02, -0.04);
-      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.015, 0.2), accentMat);
+      const grip = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.14, 0.07), bodyMat);
+      grip.position.set(0, -0.08, 0.02);
+      const slide = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.07, 0.32), accentMat);
+      slide.position.set(0, 0.02, -0.1);
+      const sight = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.03, 0.03), accentMat);
+      sight.position.set(0, 0.07, -0.22);
+      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.012, 0.12), accentMat);
       barrel.rotation.x = Math.PI / 2;
-      barrel.position.set(0, 0.04, -0.22);
-      const mag = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.08, 0.03), bodyMat);
-      mag.position.set(0, -0.04, -0.02);
-      const sight = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.02, 0.03), accentMat);
-      sight.position.set(0, 0.07, -0.08);
-      group.add(stock, body, barrel, mag, sight);
+      barrel.position.set(0, 0.0, -0.3);
+      group.add(grip, slide, sight, barrel);
+    } else {
+      const stock = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.1, 0.2), weapon === 'm4a1' ? bodyMat : woodMat);
+      stock.position.set(0, -0.02, 0.12);
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.08, 0.35), bodyMat);
+      body.position.set(0, 0.02, -0.08);
+      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.018, 0.35), accentMat);
+      barrel.rotation.x = Math.PI / 2;
+      barrel.position.set(0, 0.05, -0.3);
+      const mag = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.12, 0.05), bodyMat);
+      mag.position.set(0, -0.08, -0.04);
+      const sight = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.03, 0.04), accentMat);
+      sight.position.set(0, 0.08, -0.12);
+      const handguard = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.055, 0.2), bodyMat);
+      handguard.position.set(0, 0.01, -0.28);
+      group.add(stock, body, barrel, mag, sight, handguard);
     }
     return group;
   }
