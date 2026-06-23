@@ -245,7 +245,7 @@ export default function CSGamePage() {
         setAmmo(WEAPONS[inputRef.current.weapon as WeaponType].ammo);
       }
 
-      updateLocalPlayer(lp, inputRef.current, 1 / 60, () => DUST2.boxes);
+      const result = updateLocalPlayer(lp, inputRef.current, 1 / 60, () => DUST2.boxes);
       setHealth(lp.health);
       setAmmo(lp.ammo);
       setArmor(lp.armor);
@@ -255,21 +255,10 @@ export default function CSGamePage() {
         const elapsed = now - lp.reloadStartTime;
         const progress = Math.min(elapsed / def.reloadTime, 1);
         setReloadProgress(progress);
-        if (elapsed >= def.reloadTime) {
-          lp.reloading = false;
-          lp.ammo = def.ammo;
-          setReloading(false);
-          setReloadProgress(0);
-          setAmmo(def.ammo);
-        }
       }
 
-      if (inputRef.current.shooting && lp.weapon !== 'knife') {
-        const def = WEAPONS[lp.weapon as WeaponType];
-        if (now - lastShotRef.current >= def.fireRate && lp.ammo > 0 && !lp.reloading) {
-          lastShotRef.current = now;
-          lp.ammo--;
-
+      if (result.shot && lp.weapon !== 'knife') {
+          const def = WEAPONS[lp.weapon as WeaponType];
           const eyeY = lp.position.y + (inputRef.current.crouch ? 1.2 : 1.6);
           const fwd = new THREE.Vector3(0, 0, -1);
           fwd.applyEuler(new THREE.Euler(lp.pitch, lp.yaw, 0, 'YXZ'));
@@ -293,10 +282,7 @@ export default function CSGamePage() {
           netRef.current?.shoot({ x: origin.x, y: eyeY, z: origin.z, dx: fwd.x, dy: fwd.y, dz: fwd.z, weapon: lp.weapon, hitId });
           r.renderMuzzleFlash(origin.x + fwd.x * 0.5, eyeY + fwd.y * 0.5, origin.z + fwd.z * 0.5);
           recoilRef.current = def.recoilY;
-        }
-      } else if (inputRef.current.shooting && lp.weapon === 'knife') {
-        if (now - lastShotRef.current >= WEAPONS.knife.fireRate) {
-          lastShotRef.current = now;
+      } else if (result.shot && lp.weapon === 'knife') {
           const eyeY = lp.position.y + 1;
           const origin = new THREE.Vector3(lp.position.x, eyeY, lp.position.z);
           for (const e of enemiesRef.current.enemies) {
@@ -306,7 +292,6 @@ export default function CSGamePage() {
               break;
             }
           }
-        }
       }
 
       recoilRef.current *= 0.88;
