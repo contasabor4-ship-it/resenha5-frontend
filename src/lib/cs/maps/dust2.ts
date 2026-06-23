@@ -2,8 +2,8 @@ import { CSMapDef } from '../types';
 
 export const DUST2: CSMapDef = {
   name: 'Dust2',
-  spawnCT: { x: 40, y: 2, z: 40 },
-  spawnT: { x: -40, y: 2, z: -40 },
+  spawnCT: { x: 40, y: 6, z: 40 },
+  spawnT: { x: -40, y: 6, z: -40 },
   glbPath: '/maps/dust2.glb',
 
   boxes: [],

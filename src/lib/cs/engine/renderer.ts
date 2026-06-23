@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
 import { CSMapDef, CSPlayerState, BulletHole, BulletFireEvent, WeaponType } from '../types';
 import { WEAPONS } from '../types';
 
@@ -215,53 +214,63 @@ export function createCSRenderer(): CSRenderer {
     mapBoxes = [];
 
     if (map.glbPath) {
-      return new Promise<void>((resolve) => {
-        const loader = new GLTFLoader();
-        loader.load(map.glbPath!, (gltf) => {
-          const model = gltf.scene;
-          const SCALE = 0.025;
-          const OFFX = 8;
-          const OFFZ = -28;
-          model.scale.setScalar(SCALE);
-          model.position.set(OFFX, 0, OFFZ);
-          model.updateMatrixWorld(true);
+      return new Promise<void>(async (resolve) => {
+        try {
+          const { GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader');
+          const loader = new GLTFLoader();
+          loader.load(map.glbPath!, (gltf) => {
+            const model = gltf.scene;
+            const SCALE = 0.025;
+            const OFFX = 8;
+            const OFFY = 10;
+            const OFFZ = -28;
+            model.scale.setScalar(SCALE);
+            model.position.set(OFFX, OFFY, OFFZ);
+            model.updateMatrixWorld(true);
 
-          model.traverse((child) => {
-            if (child instanceof THREE.Mesh) {
-              child.castShadow = true;
-              child.receiveShadow = true;
-            }
-          });
-          mapGroup.add(model);
-
-          model.traverse((child) => {
-            if (child instanceof THREE.Mesh) {
-              child.updateMatrixWorld(true);
-              const geo = child.geometry;
-              if (!geo.boundingBox) geo.computeBoundingBox();
-              const bb = geo.boundingBox!;
-              const worldMin = bb.min.clone().applyMatrix4(child.matrixWorld);
-              const worldMax = bb.max.clone().applyMatrix4(child.matrixWorld);
-              const w = Math.abs(worldMax.x - worldMin.x);
-              const h = Math.abs(worldMax.y - worldMin.y);
-              const d = Math.abs(worldMax.z - worldMin.z);
-              const vol = w * h * d;
-              if (vol > 1 && w > 0.5 && h > 0.5 && d > 0.5) {
-                const cx = (worldMin.x + worldMax.x) / 2;
-                const cy = (worldMin.y + worldMax.y) / 2;
-                const cz = (worldMin.z + worldMax.z) / 2;
-                mapBoxes.push({ x: cx, y: cy, z: cz, w, h, d });
+            model.traverse((child) => {
+              if (child instanceof THREE.Mesh) {
+                child.castShadow = true;
+                child.receiveShadow = true;
               }
-            }
-          });
+            });
+            mapGroup.add(model);
 
-          console.log(`[CS MAP] GLB loaded: ${mapBoxes.length} collision boxes`);
-          resolve();
-        }, undefined, (err) => {
-          console.error('[CS MAP] GLB load error:', err);
+            model.traverse((child) => {
+              if (child instanceof THREE.Mesh) {
+                child.updateMatrixWorld(true);
+                const geo = child.geometry;
+                if (!geo.boundingBox) geo.computeBoundingBox();
+                const bb = geo.boundingBox!;
+                const worldMin = bb.min.clone().applyMatrix4(child.matrixWorld);
+                const worldMax = bb.max.clone().applyMatrix4(child.matrixWorld);
+                const w = Math.abs(worldMax.x - worldMin.x);
+                const h = Math.abs(worldMax.y - worldMin.y);
+                const d = Math.abs(worldMax.z - worldMin.z);
+                const twoLarge = (w > 0.5 && h > 0.5) || (w > 0.5 && d > 0.5) || (h > 0.5 && d > 0.5);
+                if (twoLarge) {
+                  const cx = (worldMin.x + worldMax.x) / 2;
+                  const cy = (worldMin.y + worldMax.y) / 2;
+                  const cz = (worldMin.z + worldMax.z) / 2;
+                  mapBoxes.push({ x: cx, y: cy, z: cz, w, h, d });
+                }
+              }
+            });
+
+            mapBoxes.push({ x: 0, y: -0.25, z: 0, w: 200, h: 0.5, d: 200 });
+
+            console.log(`[CS MAP] GLB loaded: ${mapBoxes.length} collision boxes`);
+            resolve();
+          }, undefined, (err) => {
+            console.error('[CS MAP] GLB load error:', err);
+            buildProceduralMap(map);
+            resolve();
+          });
+        } catch (err) {
+          console.error('[CS MAP] GLTFLoader import error:', err);
           buildProceduralMap(map);
           resolve();
-        });
+        }
       });
     } else {
       buildProceduralMap(map);
